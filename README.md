@@ -61,6 +61,34 @@ Configuration at start up:
 	}
 ```
 
+## Need to log to files?
+
+This example shows how to use with `logrotate` package
+
+```go
+	if cfg.Logs.Directory != "" && cfg.Logs.Directory != nullDevName {
+		os.MkdirAll(cfg.Logs.Directory, 0644)
+
+		var sink io.Writer
+		if flags.isStderr {
+			// This will allow to also print the logs on stderr
+			sink = os.Stderr
+			xlog.SetFormatter(xlog.NewColorFormatter(sink, true))
+		} else {
+			// do not redirect stderr to our log files
+			log.SetOutput(os.Stderr)
+		}
+
+		logRotate, err := logrotate.Initialize(cfg.Logs.Directory, cfg.ServiceName, cfg.Logs.MaxAgeDays, cfg.Logs.MaxSizeMb, true, sink)
+		if err != nil {
+			logger.Errorf("reason=logrotate, folder=%q, err=[%+v]", cfg.Logs.Directory, err)
+			return errors.WithMessage(err, "failed to initialize log rotate")
+		}
+		// Close logRotate when application terminates
+		app.OnClose(logRotate)
+	}
+```
+
 ## Design Principles
 
 ### `package main` is the place where logging gets turned on and routed
