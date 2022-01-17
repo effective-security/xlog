@@ -1,3 +1,5 @@
+[![Coverage Status](https://coveralls.io/repos/github/effective-security/xlog/badge.svg?branch=main)](https://coveralls.io/github/effective-security/xlog?branch=main)
+
 # xlog logging package
 
 Cloned from https://github.com/coreos/pkg/tree/master/capnslog
@@ -26,6 +28,36 @@ logger.KV(xlog.INFO, "version", v1, "any", override)
 	} else {
 		formatter := xlog.NewColorFormatter(os.Stderr, true)
 		xlog.SetFormatter(formatter)
+	}
+```
+
+## Set log level for different packages
+
+Config example:
+
+```yaml
+log_levels: 
+  - repo: "*"
+    level: INFO
+  - repo: github.com/effective-security/server
+    package: "*"
+    level: TRACE
+```
+
+Configuration at start up:
+
+```go
+	// Set log levels for each repo
+	if cfg.LogLevels != nil {
+		for _, ll := range cfg.LogLevels {
+			l, _ := xlog.ParseLevel(ll.Level)
+			if ll.Repo == "*" {
+				xlog.SetGlobalLogLevel(l)
+			} else {
+				xlog.SetPackageLogLevel(ll.Repo, ll.Package, l)
+			}
+			logger.Infof("logger=%q, level=%v", ll.Repo, l)
+		}
 	}
 ```
 
