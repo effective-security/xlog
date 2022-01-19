@@ -17,6 +17,12 @@
 // limitations under the License.
 package xlog
 
+// Logger interface for generic logger
+type Logger interface {
+	KeyValueLogger
+	StdLogger
+}
+
 // KeyValueLogger interface for generic logger
 type KeyValueLogger interface {
 	// KV logs entries in "key1=value1, ..., keyN=valueN" format
@@ -24,13 +30,11 @@ type KeyValueLogger interface {
 
 	// WithValues adds some key-value pairs of context to a logger.
 	// See Info for documentation on how key/value pairs work.
-	WithValues(keysAndValues ...interface{}) Logger
+	WithValues(keysAndValues ...interface{}) KeyValueLogger
 }
 
-// Logger interface for generic logger
-type Logger interface {
-	KeyValueLogger
-
+// StdLogger interface for generic logger
+type StdLogger interface {
 	Fatal(args ...interface{})
 	Fatalf(format string, args ...interface{})
 

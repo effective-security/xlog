@@ -87,6 +87,6 @@ func (l *NilLogger) Tracef(format string, args ...interface{}) {}
 
 // WithValues adds some key-value pairs of context to a logger.
 // See Info for documentation on how key/value pairs work.
-func (l *NilLogger) WithValues(keysAndValues ...interface{}) Logger {
+func (l *NilLogger) WithValues(keysAndValues ...interface{}) KeyValueLogger {
 	return l
 }

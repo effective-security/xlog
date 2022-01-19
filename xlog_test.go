@@ -387,9 +387,9 @@ func Test_StringFormatter(t *testing.T) {
 	xlog.SetGlobalLogLevel(xlog.DEBUG)
 
 	log2 := logger.WithValues("count", 1)
-	log2.Debugf("Test Debug")
+	log2.KV(xlog.DEBUG, "level", "debug")
 	result = b.String()
-	expected = "xlog_test: src=Test_StringFormatter, count=1, Test Debug\n"
+	expected = "xlog_test: src=Test_StringFormatter, count=1, level=\"debug\"\n"
 	assert.Contains(t, result, expected, "Log format does not match")
 	b.Reset()
 

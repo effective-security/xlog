@@ -40,7 +40,7 @@ const (
 
 // WithValues adds some key-value pairs of context to a logger.
 // See Info for documentation on how key/value pairs work.
-func (p *PackageLogger) WithValues(keysAndValues ...interface{}) Logger {
+func (p *PackageLogger) WithValues(keysAndValues ...interface{}) KeyValueLogger {
 	return &PackageLogger{
 		pkg:    p.pkg,
 		level:  p.level,
