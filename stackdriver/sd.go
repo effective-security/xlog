@@ -85,18 +85,18 @@ func (c *formatter) Format(pkg string, l xlog.LogLevel, depth int, entries ...in
 		severity = severityInfo
 	}
 
-	str := fmt.Sprint(entries...)
+	fn, file, line := callerName(depth + 1)
+
+	str := "src=" + fn + ", " + fmt.Sprint(entries...)
 	ee := entry{
 		LogName:   c.logName,
 		Component: pkg,
 		Time:      time.Now().UTC().Format(time.RFC3339),
 		Message:   str,
 		Severity:  severity,
-	}
-
-	fn, file, line := callerName(depth + 1)
-	ee.Source = &reportLocation{
-		Function: fn,
+		Source: &reportLocation{
+			Function: fn,
+		},
 	}
 
 	if l <= xlog.ERROR {
@@ -122,7 +122,7 @@ type entry struct {
 	LogName   string          `json:"logName,omitempty"`
 	Component string          `json:"component,omitempty"`
 	Time      string          `json:"timestamp,omitempty"`
-	Message   string          `json:"message,omitempty"`
+	Message   string          `json:"textPayload,omitempty"`
 	Severity  severity        `json:"severity,omitempty"`
 	Source    *reportLocation `json:"sourceLocation,omitempty"`
 }
