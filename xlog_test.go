@@ -359,9 +359,11 @@ func Test_StringFormatter(t *testing.T) {
 	xlog.SetFormatter(xlog.NewStringFormatter(writer).WithCaller(true))
 	xlog.SetGlobalLogLevel(xlog.INFO)
 
-	logger.Infof("Test Info")
+	func() {
+		logger.Infof("Test Info")
+	}()
 	result := b.String()
-	expected := " xlog_test: src=Test_StringFormatter, Test Info\n"
+	expected := " xlog_test: src=Test_StringFormatter.func1, Test Info\n"
 	assert.Contains(t, result, expected, "Log format does not match")
 	b.Reset()
 

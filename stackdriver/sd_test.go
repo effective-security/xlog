@@ -39,3 +39,18 @@ func Test_Formatter(t *testing.T) {
 	assert.Contains(t, result, "\"textPayload\":\"src=Test_Formatter, err=\\\"log error\\\"\",\"severity\":\"ERROR\",\"sourceLocation\":{\"file\":\"sd_test.go\",\"line\":37,\"function\":\"Test_Formatter\"}}\n")
 	b.Reset()
 }
+
+func Test_FormatterFunc(t *testing.T) {
+	var b bytes.Buffer
+	writer := bufio.NewWriter(&b)
+
+	xlog.SetGlobalLogLevel(xlog.INFO)
+	xlog.SetFormatter(NewFormatter(writer, "sd").WithCaller(true))
+
+	func() {
+		logger.Info("Test Info")
+	}()
+	result := b.String()
+	assert.Contains(t, result, "{\"logName\":\"sd\",\"component\":\"stackdriver\",\"timestamp\":")
+	assert.Contains(t, result, "\"textPayload\":\"src=Test_FormatterFunc.func1, Test Info\",\"severity\":\"INFO\",\"sourceLocation\":{\"function\":\"Test_FormatterFunc.func1\"}}\n")
+}

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"path"
 	"runtime"
 	"strings"
 	"time"
@@ -356,9 +357,9 @@ func callerName(depth int) string {
 	pc, _, _, ok := runtime.Caller(depth)
 	details := runtime.FuncForPC(pc)
 	if ok && details != nil {
-		name := details.Name()
+		name := path.Base(details.Name())
 
-		idx := strings.LastIndex(name, ".")
+		idx := strings.Index(name, ".")
 		if idx >= 0 {
 			name = name[idx+1:]
 		}
