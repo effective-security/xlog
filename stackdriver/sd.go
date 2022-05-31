@@ -177,12 +177,13 @@ func callerName(depth int) (string, string, int) {
 	pc, file, line, ok := runtime.Caller(depth)
 	details := runtime.FuncForPC(pc)
 	if ok && details != nil {
-		name := details.Name()
+		name := path.Base(details.Name())
 
-		idx := strings.LastIndex(name, ".")
+		idx := strings.Index(name, ".")
 		if idx >= 0 {
 			name = name[idx+1:]
 		}
+
 		return name, file, line
 	}
 	return "n/a", file, line
