@@ -53,4 +53,19 @@ func Test_FormatterFunc(t *testing.T) {
 	result := b.String()
 	assert.Contains(t, result, "{\"logName\":\"sd\",\"component\":\"stackdriver\",\"timestamp\":")
 	assert.Contains(t, result, "\"textPayload\":\"src=Test_FormatterFunc.func1, Test Info\",\"severity\":\"INFO\",\"sourceLocation\":{\"function\":\"Test_FormatterFunc.func1\"}}\n")
+	b.Reset()
+
+	func() {
+		s := someSvc{}
+		s.log("Test Info")
+	}()
+	result = b.String()
+	assert.Contains(t, result, "{\"logName\":\"sd\",\"component\":\"stackdriver\",\"timestamp\"")
+	assert.Contains(t, result, "\"textPayload\":\"src=log, Test Info\",\"severity\":\"INFO\",\"sourceLocation\":{\"function\":\"log\"}}\n")
+}
+
+type someSvc struct{}
+
+func (s *someSvc) log(msg string) {
+	logger.Info(msg)
 }
