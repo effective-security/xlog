@@ -367,6 +367,15 @@ func Test_StringFormatter(t *testing.T) {
 	assert.Contains(t, result, expected, "Log format does not match")
 	b.Reset()
 
+	func() {
+		s := someSvc{}
+		s.log("Test Info")
+	}()
+	result = b.String()
+	expected = " xlog_test: src=log, Test Info\n"
+	assert.Contains(t, result, expected, "Log format does not match")
+	b.Reset()
+
 	logger.Errorf("Test Error")
 	result = b.String()
 	expected = " xlog_test: src=Test_StringFormatter, Test Error\n"
@@ -411,6 +420,12 @@ func Test_StringFormatter(t *testing.T) {
 	expected = `xlog_test: src=Test_StringFormatter, count=1, int=1, nint=-2, uint64=123456789123456, bool=false, time="2021-04-01T00:00:00Z", strings=["s1","s2"], err="originateError: msg=logs error, level=0\ngithub.com/effective-security/xlog_test.originateError\n`
 	assert.Contains(t, result, expected, "Log format does not match")
 	b.Reset()
+}
+
+type someSvc struct{}
+
+func (s *someSvc) log(msg string) {
+	logger.Info(msg)
 }
 
 func TestXlogString(t *testing.T) {

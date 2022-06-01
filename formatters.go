@@ -362,6 +362,12 @@ func callerName(depth int) string {
 		idx := strings.Index(name, ".")
 		if idx >= 0 {
 			name = name[idx+1:]
+			if name[0] == '(' {
+				idx = strings.Index(name, ".")
+				if idx >= 0 {
+					name = name[idx+1:]
+				}
+			}
 		}
 		return name
 	}

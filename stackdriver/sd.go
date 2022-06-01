@@ -182,6 +182,12 @@ func callerName(depth int) (string, string, int) {
 		idx := strings.Index(name, ".")
 		if idx >= 0 {
 			name = name[idx+1:]
+			if name[0] == '(' {
+				idx = strings.Index(name, ".")
+				if idx >= 0 {
+					name = name[idx+1:]
+				}
+			}
 		}
 
 		return name, file, line
