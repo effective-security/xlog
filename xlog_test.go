@@ -66,7 +66,7 @@ func Test_NewLogger(t *testing.T) {
 	writer := bufio.NewWriter(&b)
 
 	xlog.SetGlobalLogLevel(xlog.INFO)
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer, false))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer))
 	logger.Infof("Info log")
 	logger.Errorf("Error log")
 	logger.Noticef("Notice log")
@@ -80,7 +80,7 @@ func Test_NewLogger(t *testing.T) {
 	assert.Contains(t, result, "I | xlog_test: src=Test_NewLogger, log log\n")
 
 	b.Reset()
-	xlog.GetFormatter().WithCaller(false)
+	xlog.GetFormatter().Options(xlog.FormatNoCaller)
 	logger.Infof("Info log")
 	logger.Errorf("Error log")
 	logger.Noticef("Notice log")
@@ -99,7 +99,7 @@ func Test_PrettyFormatter(t *testing.T) {
 	writer := bufio.NewWriter(&b)
 
 	xlog.SetGlobalLogLevel(xlog.INFO)
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer, false))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer))
 
 	logger.Info("Test Info")
 	result := b.String()
@@ -177,7 +177,7 @@ func Test_WithTracedError(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer, false).WithCaller(false))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatNoCaller))
 
 	prefixLen := len(logPrefixFormt)
 	for idx, c := range cases {
@@ -229,7 +229,7 @@ func Test_WithAnnotatedError(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer, false).WithCaller(false))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatNoCaller))
 
 	prefixLen := len(logPrefixFormt)
 	for idx, c := range cases {
@@ -279,7 +279,7 @@ func Test_PrettyFormatterDebug(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer, true).WithCaller(true))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller, xlog.FormatDebug))
 	xlog.SetGlobalLogLevel(xlog.INFO)
 
 	logger.Trace("Test trace")
@@ -356,7 +356,7 @@ func Test_StringFormatter(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewStringFormatter(writer).WithCaller(true))
+	xlog.SetFormatter(xlog.NewStringFormatter(writer).Options(xlog.FormatWithCaller))
 	xlog.SetGlobalLogLevel(xlog.INFO)
 
 	func() {
@@ -531,12 +531,12 @@ func Test_ColorFormatterDebug(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewColorFormatter(writer, true).WithCaller(false))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatNoCaller, xlog.FormatColor, xlog.FormatDebug))
 	xlog.SetGlobalLogLevel(xlog.DEBUG)
 
 	logger.Infof("Test Info")
 	result := b.String()
-	expected := string(xlog.LevelColors[xlog.INFO]) + " I | xlog_test: Test Info\n\033[0m"
+	expected := string(xlog.LevelColors[xlog.INFO]) + "I | xlog_test: Test Info\n\033[0m"
 	assert.Contains(t, result, expected)
 	b.Reset()
 
@@ -549,31 +549,31 @@ func Test_ColorFormatterDebug(t *testing.T) {
 
 	logger.Errorf("Test Error")
 	result = b.String()
-	expected = string(xlog.LevelColors[xlog.ERROR]) + " E | xlog_test: Test Error\n\033[0m"
+	expected = string(xlog.LevelColors[xlog.ERROR]) + "E | xlog_test: Test Error\n\033[0m"
 	assert.Contains(t, result, expected)
 	b.Reset()
 
 	logger.Error("unable to find: ", fmt.Errorf("not found"))
 	result = b.String()
-	expected = string(xlog.LevelColors[xlog.ERROR]) + " E | xlog_test: unable to find: not found\n\x1b[0m"
+	expected = string(xlog.LevelColors[xlog.ERROR]) + "E | xlog_test: unable to find: not found\n\x1b[0m"
 	assert.Contains(t, result, expected)
 	b.Reset()
 
 	logger.Warningf("Test Warning")
 	result = b.String()
-	expected = string(xlog.LevelColors[xlog.WARNING]) + " W | xlog_test: Test Warning\n\033[0m"
+	expected = string(xlog.LevelColors[xlog.WARNING]) + "W | xlog_test: Test Warning\n\033[0m"
 	assert.Contains(t, result, expected)
 	b.Reset()
 
 	logger.Tracef("Test Trace")
 	result = b.String()
-	expected = string(xlog.LevelColors[xlog.TRACE]) + " T | xlog_test: Test Trace\n\033[0m"
+	expected = string(xlog.LevelColors[xlog.TRACE]) + "T | xlog_test: Test Trace\n\033[0m"
 	assert.Contains(t, result, expected)
 	b.Reset()
 
 	logger.Debugf("Test Debug")
 	result = b.String()
-	expected = string(xlog.LevelColors[xlog.DEBUG]) + " D | xlog_test: Test Debug\n\033[0m"
+	expected = string(xlog.LevelColors[xlog.DEBUG]) + "D | xlog_test: Test Debug\n\033[0m"
 	assert.Contains(t, result, expected)
 	b.Reset()
 }
@@ -582,14 +582,14 @@ func Test_WithCaller(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewColorFormatter(writer, false).WithCaller(true))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller, xlog.FormatColor))
 
 	logger.Infof("Test Info")
 	result := b.String()
-	assert.Contains(t, result, " I | xlog_test: src=Test_WithCaller, Test Info\n")
+	assert.Contains(t, result, "I | xlog_test: src=Test_WithCaller, Test Info\n")
 	b.Reset()
 
-	xlog.SetFormatter(xlog.NewLogFormatter(writer, "prefix", 0).WithCaller(true))
+	xlog.SetFormatter(xlog.NewLogFormatter(writer, "prefix", 0).Options(xlog.FormatWithCaller, xlog.FormatColor))
 	logger.Infof("Test Info")
 	writer.Flush()
 	result = b.String()

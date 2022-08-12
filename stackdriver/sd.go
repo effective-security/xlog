@@ -52,23 +52,26 @@ var levelsToSeverity = map[xlog.LogLevel]severity{
 
 // formatter provides logs format for StackDriver
 type formatter struct {
-	w          *bufio.Writer
-	logName    string
-	withCaller bool
+	config
+	w       *bufio.Writer
+	logName string
 }
 
 // NewFormatter returns an instance of StackdriverFormatter
 func NewFormatter(w io.Writer, logName string) xlog.Formatter {
 	return &formatter{
-		w:          bufio.NewWriter(w),
-		logName:    logName,
-		withCaller: true,
+		w:       bufio.NewWriter(w),
+		logName: logName,
+		config: config{
+			withCaller: true,
+			skipTime:   true,
+		},
 	}
 }
 
-// WithCaller allows to configure if the caller shall be logged
-func (c *formatter) WithCaller(val bool) xlog.Formatter {
-	c.withCaller = val
+// Options allows to configure formatter behavior
+func (c *formatter) Options(ops ...xlog.FormatterOption) xlog.Formatter {
+	c.config.options(ops)
 	return c
 }
 
@@ -193,4 +196,29 @@ func callerName(depth int) (string, string, int) {
 		return name, file, line
 	}
 	return "n/a", file, line
+}
+
+type config struct {
+	withCaller bool
+	skipTime   bool
+	debug      bool
+	color      bool
+}
+
+// Options allows to configure formatter behavior
+func (c config) options(ops []xlog.FormatterOption) {
+	for _, op := range ops {
+		switch op {
+		case xlog.FormatWithCaller:
+			c.withCaller = true
+		case xlog.FormatNoCaller:
+			c.withCaller = false
+		case xlog.FormatSkipTime:
+			c.skipTime = true
+		case xlog.FormatDebug:
+			c.debug = true
+		case xlog.FormatColor:
+			c.color = true
+		}
+	}
 }

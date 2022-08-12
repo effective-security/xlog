@@ -27,6 +27,22 @@ import (
 	"time"
 )
 
+// FormatterOption specifies additional formatter options
+type FormatterOption int
+
+const (
+	// FormatWithCaller allows to configure if the caller shall be logged
+	FormatWithCaller FormatterOption = iota + 1
+	// FormatNoCaller disables log the caller
+	FormatNoCaller
+	// FormatSkipTime allows to configure skipping the time log
+	FormatSkipTime
+	// FormatDebug allows to print the file:line for each log
+	FormatDebug
+	// FormatColor allows to print color logs
+	FormatColor
+)
+
 // Formatter defines an interface for formatting logs
 type Formatter interface {
 	// Format log entry string to the stream,
@@ -37,22 +53,25 @@ type Formatter interface {
 	FormatKV(pkg string, level LogLevel, depth int, entries ...interface{})
 	// Flush the logs
 	Flush()
-	// WithCaller allows to configure if the caller shall be logged
-	WithCaller(bool) Formatter
+	// Options allows to configure formatter behavior
+	Options(ops ...FormatterOption) Formatter
 }
 
 // NewStringFormatter returns string-based formatter
 func NewStringFormatter(w io.Writer) Formatter {
 	return &StringFormatter{
-		w:          bufio.NewWriter(w),
-		withCaller: true,
+		w: bufio.NewWriter(w),
+		config: config{
+			withCaller: true,
+			skipTime:   false,
+		},
 	}
 }
 
 // StringFormatter defines string-based formatter
 type StringFormatter struct {
-	w          *bufio.Writer
-	withCaller bool
+	config
+	w *bufio.Writer
 }
 
 // FormatKV log entry string to the stream,
@@ -61,17 +80,20 @@ func (s *StringFormatter) FormatKV(pkg string, level LogLevel, depth int, entrie
 	s.Format(pkg, level, depth+1, flatten(entries...))
 }
 
-// WithCaller allows to configure if the caller shall be logged
-func (s *StringFormatter) WithCaller(val bool) Formatter {
-	s.withCaller = val
+// Options allows to configure formatter behavior
+func (s *StringFormatter) Options(ops ...FormatterOption) Formatter {
+	s.config.options(ops)
 	return s
 }
 
 // Format log entry string to the stream
 func (s *StringFormatter) Format(pkg string, l LogLevel, depth int, entries ...interface{}) {
-	now := time.Now().UTC()
-	s.w.WriteString(now.Format(time.RFC3339))
-	s.w.WriteByte(' ')
+	if !s.skipTime {
+		now := time.Now().UTC()
+		s.w.WriteString(now.Format(time.RFC3339))
+		s.w.WriteByte(' ')
+	}
+
 	writeEntries(s.w, pkg, l, depth+1, s.withCaller, entries...)
 	s.Flush()
 }
@@ -101,24 +123,27 @@ func (s *StringFormatter) Flush() {
 }
 
 // NewPrettyFormatter returns an instance of PrettyFormatter
-func NewPrettyFormatter(w io.Writer, debug bool) Formatter {
+func NewPrettyFormatter(w io.Writer) Formatter {
 	return &PrettyFormatter{
-		w:          bufio.NewWriter(w),
-		debug:      debug,
-		withCaller: true,
+		w: bufio.NewWriter(w),
+		config: config{
+			withCaller: true,
+			skipTime:   false,
+			debug:      false,
+			color:      false,
+		},
 	}
 }
 
 // PrettyFormatter provides default logs format
 type PrettyFormatter struct {
-	w          *bufio.Writer
-	debug      bool
-	withCaller bool
+	config
+	w *bufio.Writer
 }
 
-// WithCaller allows to configure if the caller shall be logged
-func (c *PrettyFormatter) WithCaller(val bool) Formatter {
-	c.withCaller = val
+// Options allows to configure formatter behavior
+func (c *PrettyFormatter) Options(ops ...FormatterOption) Formatter {
+	c.config.options(ops)
 	return c
 }
 
@@ -130,11 +155,13 @@ func (c *PrettyFormatter) FormatKV(pkg string, level LogLevel, depth int, entrie
 
 // Format log entry string to the stream
 func (c *PrettyFormatter) Format(pkg string, l LogLevel, depth int, entries ...interface{}) {
-	now := time.Now()
-	ts := now.Format("2006-01-02 15:04:05")
-	c.w.WriteString(ts)
-	ms := now.Nanosecond() / 1000
-	c.w.WriteString(fmt.Sprintf(".%06d", ms))
+	if !c.skipTime {
+		now := time.Now()
+		ts := now.Format("2006-01-02 15:04:05")
+		c.w.WriteString(ts)
+		ms := now.Nanosecond() / 1000
+		c.w.WriteString(fmt.Sprintf(".%06d ", ms))
+	}
 	if c.debug {
 		_, file, line, ok := runtime.Caller(depth) // It's always the same number of frames to the user's call.
 		if !ok {
@@ -149,32 +176,23 @@ func (c *PrettyFormatter) Format(pkg string, l LogLevel, depth int, entries ...i
 		if line < 0 {
 			line = 0 // not a real line number
 		}
-		c.w.WriteString(fmt.Sprintf(" [%s:%d]", file, line))
+		c.w.WriteString(fmt.Sprintf("[%s:%d] ", file, line))
 	}
-	c.w.WriteString(fmt.Sprint(" ", l.Char(), " | "))
+	if c.color {
+		c.w.Write(LevelColors[l])
+	}
+	c.w.WriteString(l.Char())
+	c.w.WriteString(" | ")
 	writeEntries(c.w, pkg, l, depth+1, c.withCaller, entries...)
+	if c.color {
+		c.w.Write(ColorOff)
+	}
 	c.Flush()
 }
 
 // Flush the logs
 func (c *PrettyFormatter) Flush() {
 	c.w.Flush()
-}
-
-// NewColorFormatter returns an instance of ColorFormatter
-func NewColorFormatter(w io.Writer, color bool) Formatter {
-	return &ColorFormatter{
-		w:          bufio.NewWriter(w),
-		color:      color,
-		withCaller: true,
-	}
-}
-
-// ColorFormatter provides colorful logs format
-type ColorFormatter struct {
-	w          *bufio.Writer
-	color      bool
-	withCaller bool
 }
 
 // color pallete map
@@ -205,46 +223,11 @@ var LevelColors = map[LogLevel][]byte{
 	TRACE:    colorGray,
 }
 
-// WithCaller allows to configure if the caller shall be logged
-func (c *ColorFormatter) WithCaller(val bool) Formatter {
-	c.withCaller = val
-	return c
-}
-
-// FormatKV log entry string to the stream,
-// the entries are key/value pairs
-func (c *ColorFormatter) FormatKV(pkg string, level LogLevel, depth int, entries ...interface{}) {
-	c.Format(pkg, level, depth+1, flatten(entries...))
-}
-
-// Format log entry string to the stream
-func (c *ColorFormatter) Format(pkg string, l LogLevel, depth int, entries ...interface{}) {
-	now := time.Now()
-	ts := now.Format("2006-01-02 15:04:05")
-	c.w.WriteString(ts)
-	ms := now.Nanosecond() / 1000
-	c.w.WriteString(fmt.Sprintf(".%06d", ms))
-	if c.color {
-		c.w.Write(LevelColors[l])
-	}
-	c.w.WriteString(fmt.Sprint(" ", l.Char(), " | "))
-	writeEntries(c.w, pkg, l, depth+1, c.withCaller, entries...)
-	if c.color {
-		c.w.Write(ColorOff)
-	}
-	c.Flush()
-}
-
-// Flush the logs
-func (c *ColorFormatter) Flush() {
-	c.w.Flush()
-}
-
 // LogFormatter emulates the form of the traditional built-in logger.
 type LogFormatter struct {
-	logger     *log.Logger
-	prefix     string
-	withCaller bool
+	config
+	logger *log.Logger
+	prefix string
 }
 
 // NewLogFormatter is a helper to produce a new LogFormatter struct. It uses the
@@ -256,9 +239,9 @@ func NewLogFormatter(w io.Writer, prefix string, flag int) Formatter {
 	}
 }
 
-// WithCaller allows to configure if the caller shall be logged
-func (lf *LogFormatter) WithCaller(val bool) Formatter {
-	lf.withCaller = val
+// Options allows to configure formatter behavior
+func (lf *LogFormatter) Options(ops ...FormatterOption) Formatter {
+	lf.config.options(ops)
 	return lf
 }
 
@@ -293,8 +276,8 @@ func NewNilFormatter() Formatter {
 	return &NilFormatter{}
 }
 
-// WithCaller allows to configure if the caller shall be logged
-func (c *NilFormatter) WithCaller(val bool) Formatter {
+// Options allows to configure formatter behavior
+func (c *NilFormatter) Options(ops ...FormatterOption) Formatter {
 	return c
 }
 
@@ -372,4 +355,29 @@ func callerName(depth int) string {
 		return name
 	}
 	return "n/a"
+}
+
+type config struct {
+	withCaller bool
+	skipTime   bool
+	debug      bool
+	color      bool
+}
+
+// Options allows to configure formatter behavior
+func (c *config) options(ops []FormatterOption) {
+	for _, op := range ops {
+		switch op {
+		case FormatWithCaller:
+			c.withCaller = true
+		case FormatNoCaller:
+			c.withCaller = false
+		case FormatSkipTime:
+			c.skipTime = true
+		case FormatDebug:
+			c.debug = true
+		case FormatColor:
+			c.color = true
+		}
+	}
 }

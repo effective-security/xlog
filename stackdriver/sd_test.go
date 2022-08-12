@@ -17,7 +17,7 @@ func Test_Formatter(t *testing.T) {
 	writer := bufio.NewWriter(&b)
 
 	xlog.SetGlobalLogLevel(xlog.INFO)
-	xlog.SetFormatter(NewFormatter(writer, "sd").WithCaller(true))
+	xlog.SetFormatter(NewFormatter(writer, "sd").Options(xlog.FormatWithCaller))
 
 	logger.Info("Test Info")
 	result := b.String()
@@ -45,7 +45,7 @@ func Test_FormatterFunc(t *testing.T) {
 	writer := bufio.NewWriter(&b)
 
 	xlog.SetGlobalLogLevel(xlog.INFO)
-	xlog.SetFormatter(NewFormatter(writer, "sd").WithCaller(true))
+	xlog.SetFormatter(NewFormatter(writer, "sd").Options(xlog.FormatWithCaller))
 
 	func() {
 		logger.Info("Test Info")
