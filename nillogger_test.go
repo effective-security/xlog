@@ -13,7 +13,7 @@ func Test_NewNilLogger(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer, false).WithCaller(true))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller))
 
 	logger := xlog.NewNilLogger()
 
@@ -30,6 +30,6 @@ func Test_NewNilLogger(t *testing.T) {
 
 	assert.Empty(t, b.Bytes())
 
-	xlog.SetFormatter(xlog.NewNilFormatter().WithCaller(true))
+	xlog.SetFormatter(xlog.NewNilFormatter().Options(xlog.FormatWithCaller))
 	logger.Info("1")
 }

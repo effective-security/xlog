@@ -39,5 +39,5 @@ func init() {
 
 // NewDefaultFormatter returns an instance of default formatter
 func NewDefaultFormatter(out io.Writer) Formatter {
-	return NewPrettyFormatter(out, false)
+	return NewPrettyFormatter(out)
 }

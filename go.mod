@@ -1,6 +1,6 @@
 module github.com/effective-security/xlog
 
-go 1.17
+go 1.18
 
 require (
 	github.com/go-phorce/cov-report v1.1.1-0.20200622030546-3fb510c4b1ba
