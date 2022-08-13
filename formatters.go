@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"path"
 	"runtime"
 	"strings"
@@ -37,10 +36,12 @@ const (
 	FormatNoCaller
 	// FormatSkipTime allows to configure skipping the time log
 	FormatSkipTime
-	// FormatDebug allows to print the file:line for each log
-	FormatDebug
-	// FormatColor allows to print color logs
-	FormatColor
+	// FormatSkipLevel allows to configure skipping the level log
+	FormatSkipLevel
+	// FormatWithLocation allows to print the file:line for each log
+	FormatWithLocation
+	// FormatWithColor allows to print color logs
+	FormatWithColor
 )
 
 // Formatter defines an interface for formatting logs
@@ -56,6 +57,9 @@ type Formatter interface {
 	// Options allows to configure formatter behavior
 	Options(ops ...FormatterOption) Formatter
 }
+
+// TimeNowFn to override in unit tests
+var TimeNowFn = time.Now
 
 // NewStringFormatter returns string-based formatter
 func NewStringFormatter(w io.Writer) Formatter {
@@ -74,46 +78,70 @@ type StringFormatter struct {
 	w *bufio.Writer
 }
 
-// FormatKV log entry string to the stream,
-// the entries are key/value pairs
-func (s *StringFormatter) FormatKV(pkg string, level LogLevel, depth int, entries ...interface{}) {
-	s.Format(pkg, level, depth+1, flatten(entries...))
-}
-
 // Options allows to configure formatter behavior
 func (s *StringFormatter) Options(ops ...FormatterOption) Formatter {
 	s.config.options(ops)
 	return s
 }
 
+// FormatKV log entry string to the stream,
+// the entries are key/value pairs
+func (s *StringFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...interface{}) {
+	s.format(pkg, l, depth+1, false, flatten(entries...)...)
+}
+
 // Format log entry string to the stream
 func (s *StringFormatter) Format(pkg string, l LogLevel, depth int, entries ...interface{}) {
+	s.format(pkg, l, depth+1, true, entries...)
+}
+
+func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...interface{}) {
 	if !s.skipTime {
-		now := time.Now().UTC()
+		now := TimeNowFn().UTC()
+		s.w.WriteString("time=")
 		s.w.WriteString(now.Format(time.RFC3339))
 		s.w.WriteByte(' ')
 	}
+	if !s.skipLevel {
+		s.w.WriteString("level=")
+		s.w.WriteString(l.Char())
+		s.w.WriteByte(' ')
+	}
 
-	writeEntries(s.w, pkg, l, depth+1, s.withCaller, entries...)
+	writeEntries(s.w, pkg, " ", depth+1, s.withCaller, escape, entries...)
 	s.Flush()
 }
 
-func writeEntries(w *bufio.Writer, pkg string, _ LogLevel, depth int, withCaller bool, entries ...interface{}) {
+func writeEntries(w *bufio.Writer, pkg, separator string, depth int, withCaller, escape bool, entries ...interface{}) {
 	if pkg != "" {
-		w.WriteString(pkg + ": ")
+		w.WriteString("pkg=")
+		w.WriteString(pkg)
+		w.WriteString(separator)
 	}
 
 	if withCaller {
 		w.WriteString("src=")
 		w.WriteString(callerName(depth + 1))
-		w.WriteString(", ")
+		w.WriteString(separator)
 	}
 
-	str := fmt.Sprint(entries...)
-	endsInNL := strings.HasSuffix(str, "\n")
-	w.WriteString(str)
+	var str string
+	for i, count := 0, len(entries); i < count; i++ {
+		if escape {
+			str = EscapedString(entries[i])
+		} else {
+			str = fmt.Sprint(entries[i])
+		}
+		w.WriteString(str)
+		if i+1 < count {
+			w.WriteString(separator)
+		}
+	}
+
+	l := len(str)
+	endsInNL := l > 0 && str[l-1] == '\n'
 	if !endsInNL {
-		w.WriteString("\n")
+		w.WriteByte('\n')
 	}
 }
 
@@ -127,10 +155,10 @@ func NewPrettyFormatter(w io.Writer) Formatter {
 	return &PrettyFormatter{
 		w: bufio.NewWriter(w),
 		config: config{
-			withCaller: true,
-			skipTime:   false,
-			debug:      false,
-			color:      false,
+			withCaller:   true,
+			skipTime:     false,
+			withLocation: false,
+			color:        false,
 		},
 	}
 }
@@ -149,41 +177,41 @@ func (c *PrettyFormatter) Options(ops ...FormatterOption) Formatter {
 
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
-func (c *PrettyFormatter) FormatKV(pkg string, level LogLevel, depth int, entries ...interface{}) {
-	c.Format(pkg, level, depth+1, flatten(entries...))
+func (c *PrettyFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...interface{}) {
+	c.format(pkg, l, depth+1, false, flatten(entries...)...)
 }
 
 // Format log entry string to the stream
 func (c *PrettyFormatter) Format(pkg string, l LogLevel, depth int, entries ...interface{}) {
+	c.format(pkg, l, depth+1, false, entries...)
+}
+
+// Format log entry string to the stream
+func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...interface{}) {
 	if !c.skipTime {
-		now := time.Now()
+		now := TimeNowFn()
 		ts := now.Format("2006-01-02 15:04:05")
 		c.w.WriteString(ts)
 		ms := now.Nanosecond() / 1000
 		c.w.WriteString(fmt.Sprintf(".%06d ", ms))
 	}
-	if c.debug {
-		_, file, line, ok := runtime.Caller(depth) // It's always the same number of frames to the user's call.
-		if !ok {
-			file = "???"
-			line = 1
-		} else {
-			slash := strings.LastIndex(file, "/")
-			if slash >= 0 {
-				file = file[slash+1:]
-			}
-		}
-		if line < 0 {
-			line = 0 // not a real line number
-		}
+	if c.withLocation {
+		file, line := location(depth + 1) // It's always the same number of frames to the user's call.
 		c.w.WriteString(fmt.Sprintf("[%s:%d] ", file, line))
 	}
 	if c.color {
 		c.w.Write(LevelColors[l])
 	}
-	c.w.WriteString(l.Char())
-	c.w.WriteString(" | ")
-	writeEntries(c.w, pkg, l, depth+1, c.withCaller, entries...)
+	if !c.skipLevel {
+		c.w.WriteString(l.Char())
+		c.w.WriteString(" | ")
+	}
+
+	if pkg != "" {
+		c.w.WriteString(pkg)
+		c.w.WriteString(": ")
+	}
+	writeEntries(c.w, "", ", ", depth+1, c.withCaller, escape, entries...)
 	if c.color {
 		c.w.Write(ColorOff)
 	}
@@ -223,49 +251,6 @@ var LevelColors = map[LogLevel][]byte{
 	TRACE:    colorGray,
 }
 
-// LogFormatter emulates the form of the traditional built-in logger.
-type LogFormatter struct {
-	config
-	logger *log.Logger
-	prefix string
-}
-
-// NewLogFormatter is a helper to produce a new LogFormatter struct. It uses the
-// golang log package to actually do the logging work so that logs look similar.
-func NewLogFormatter(w io.Writer, prefix string, flag int) Formatter {
-	return &LogFormatter{
-		logger: log.New(w, "", flag), // don't use prefix here
-		prefix: prefix,               // save it instead
-	}
-}
-
-// Options allows to configure formatter behavior
-func (lf *LogFormatter) Options(ops ...FormatterOption) Formatter {
-	lf.config.options(ops)
-	return lf
-}
-
-// FormatKV log entry string to the stream,
-// the entries are key/value pairs
-func (lf *LogFormatter) FormatKV(pkg string, level LogLevel, depth int, entries ...interface{}) {
-	lf.Format(pkg, level, depth+1, flatten(entries...))
-}
-
-// Format builds a log message for the LogFormatter. The LogLevel is ignored.
-func (lf *LogFormatter) Format(pkg string, _ LogLevel, _ int, entries ...interface{}) {
-	str := fmt.Sprint(entries...)
-	prefix := lf.prefix
-	if pkg != "" {
-		prefix = fmt.Sprintf("%s%s: ", prefix, pkg)
-	}
-	lf.logger.Output(5, fmt.Sprintf("%s%v", prefix, str)) // call depth is 5
-}
-
-// Flush is included so that the interface is complete, but is a no-op.
-func (lf *LogFormatter) Flush() {
-	// noop
-}
-
 // NilFormatter is a no-op log formatter that does nothing.
 type NilFormatter struct {
 }
@@ -296,32 +281,27 @@ func (*NilFormatter) Flush() {
 	// noop
 }
 
-func flatten(kvList ...interface{}) string {
+func flatten(kvList ...interface{}) []interface{} {
 	size := len(kvList)
-	buf := bytes.Buffer{}
-	for i := 0; i < size; i += 2 {
+	list := make([]interface{}, size/2)
+
+	for i, j := 0, 0; i < size; i += 2 {
 		k, ok := kvList[i].(string)
 		if !ok {
-			panic(fmt.Sprintf("key is not a string: %s", String(kvList[i])))
+			panic(fmt.Sprintf("key is not a string: %v", EscapedString(kvList[i])))
 		}
 		var v interface{}
 		if i+1 < size {
 			v = kvList[i+1]
 		}
-		if i > 0 {
-			buf.WriteRune(',')
-			buf.WriteRune(' ')
-		}
-		buf.WriteString(k)
-		buf.WriteString("=")
-		buf.WriteString(String(v))
-
+		list[j] = k + "=" + EscapedString(v)
+		j++
 	}
-	return buf.String()
+	return list
 }
 
-// String returns string value stuitable for logging
-func String(value interface{}) string {
+// EscapedString returns string value stuitable for logging
+func EscapedString(value interface{}) string {
 	if err, ok := value.(error); ok {
 		// if error does not support json.Marshaler,
 		// the print the full details
@@ -342,6 +322,7 @@ func callerName(depth int) string {
 	if ok && details != nil {
 		name := path.Base(details.Name())
 
+		// remove package name
 		idx := strings.Index(name, ".")
 		if idx >= 0 {
 			name = name[idx+1:]
@@ -357,11 +338,29 @@ func callerName(depth int) string {
 	return "n/a"
 }
 
+func location(depth int) (string, int) {
+	_, file, line, ok := runtime.Caller(depth) // It's always the same number of frames to the user's call.
+	if !ok {
+		file = "???"
+		line = 1
+	} else {
+		slash := strings.LastIndex(file, "/")
+		if slash >= 0 {
+			file = file[slash+1:]
+		}
+	}
+	if line < 0 {
+		line = 0 // not a real line number
+	}
+	return file, line
+}
+
 type config struct {
-	withCaller bool
-	skipTime   bool
-	debug      bool
-	color      bool
+	withCaller   bool
+	skipTime     bool
+	skipLevel    bool
+	withLocation bool
+	color        bool
 }
 
 // Options allows to configure formatter behavior
@@ -374,9 +373,11 @@ func (c *config) options(ops []FormatterOption) {
 			c.withCaller = false
 		case FormatSkipTime:
 			c.skipTime = true
-		case FormatDebug:
-			c.debug = true
-		case FormatColor:
+		case FormatSkipLevel:
+			c.skipLevel = true
+		case FormatWithLocation:
+			c.withLocation = true
+		case FormatWithColor:
 			c.color = true
 		}
 	}

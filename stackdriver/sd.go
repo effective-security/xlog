@@ -215,9 +215,9 @@ func (c config) options(ops []xlog.FormatterOption) {
 			c.withCaller = false
 		case xlog.FormatSkipTime:
 			c.skipTime = true
-		case xlog.FormatDebug:
+		case xlog.FormatWithLocation:
 			c.debug = true
-		case xlog.FormatColor:
+		case xlog.FormatWithColor:
 			c.color = true
 		}
 	}
