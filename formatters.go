@@ -108,19 +108,26 @@ func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		s.w.WriteByte(' ')
 	}
 
-	writeEntries(s.w, pkg, " ", depth+1, s.withCaller, escape, entries...)
+	writeEntries(s.w, pkg, " ", depth+1, s.withCaller, s.withLocation, escape, entries...)
 	s.Flush()
 }
 
-func writeEntries(w *bufio.Writer, pkg, separator string, depth int, withCaller, escape bool, entries ...interface{}) {
+func writeEntries(w *bufio.Writer, pkg, separator string, depth int, withCaller, withLocation, escape bool, entries ...interface{}) {
 	if pkg != "" {
 		w.WriteString("pkg=")
 		w.WriteString(pkg)
 		w.WriteString(separator)
 	}
 
-	if withCaller {
+	if withLocation {
 		w.WriteString("src=")
+		file, line := location(depth + 1) // It's always the same number of frames to the user's call.
+		w.WriteString(fmt.Sprintf("%s:%d", file, line))
+		w.WriteString(separator)
+	}
+
+	if withCaller {
+		w.WriteString("func=")
 		w.WriteString(callerName(depth + 1))
 		w.WriteString(separator)
 	}
@@ -183,7 +190,7 @@ func (c *PrettyFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ..
 
 // Format log entry string to the stream
 func (c *PrettyFormatter) Format(pkg string, l LogLevel, depth int, entries ...interface{}) {
-	c.format(pkg, l, depth+1, false, entries...)
+	c.format(pkg, l, depth+1, true, entries...)
 }
 
 // Format log entry string to the stream
@@ -195,10 +202,6 @@ func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		ms := now.Nanosecond() / 1000
 		c.w.WriteString(fmt.Sprintf(".%06d ", ms))
 	}
-	if c.withLocation {
-		file, line := location(depth + 1) // It's always the same number of frames to the user's call.
-		c.w.WriteString(fmt.Sprintf("[%s:%d] ", file, line))
-	}
 	if c.color {
 		c.w.Write(LevelColors[l])
 	}
@@ -206,15 +209,16 @@ func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		c.w.WriteString(l.Char())
 		c.w.WriteString(" | ")
 	}
-
 	if pkg != "" {
 		c.w.WriteString(pkg)
 		c.w.WriteString(": ")
 	}
-	writeEntries(c.w, "", ", ", depth+1, c.withCaller, escape, entries...)
+
+	writeEntries(c.w, "", ", ", depth+1, c.withCaller, c.withLocation, escape, entries...)
 	if c.color {
 		c.w.Write(ColorOff)
 	}
+
 	c.Flush()
 }
 
