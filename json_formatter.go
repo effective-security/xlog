@@ -72,13 +72,14 @@ func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, escape bool, k
 		kv["pkg"] = pkg
 	}
 
-	if c.withLocation {
-		file, line := location(depth + 1) // It's always the same number of frames to the user's call.
-		kv["src"] = fmt.Sprintf("%s:%d", file, line)
-	}
-
-	if c.withCaller {
-		kv["func"] = callerName(depth + 1)
+	if c.withLocation || c.withCaller {
+		caller, file, line := Caller(depth + 1)
+		if c.withLocation {
+			kv["src"] = fmt.Sprintf("%s:%d", file, line)
+		}
+		if c.withCaller {
+			kv["func"] = caller
+		}
 	}
 
 	if len(entries) > 0 {

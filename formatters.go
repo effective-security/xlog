@@ -108,41 +108,67 @@ func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		s.w.WriteByte(' ')
 	}
 
-	writeEntries(s.w, pkg, " ", depth+1, s.withCaller, s.withLocation, escape, entries...)
+	params := writeEntriesParams{
+		pkg:          pkg,
+		separator:    " ",
+		depth:        depth + 1,
+		withCaller:   s.withCaller,
+		withLocation: s.withLocation,
+		escape:       escape,
+	}
+	writeEntries(s.w, &params, entries...)
 	s.Flush()
 }
 
-func writeEntries(w *bufio.Writer, pkg, separator string, depth int, withCaller, withLocation, escape bool, entries ...interface{}) {
-	if pkg != "" {
+type writeEntriesParams struct {
+	pkg          string
+	separator    string
+	depth        int
+	withCaller   bool
+	withLocation bool
+	escape       bool
+	colorOff     bool
+}
+
+func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...interface{}) {
+	if p.pkg != "" {
 		w.WriteString("pkg=")
-		w.WriteString(pkg)
-		w.WriteString(separator)
+		w.WriteString(p.pkg)
+		w.WriteString(p.separator)
 	}
 
-	if withLocation {
-		w.WriteString("src=")
-		file, line := location(depth + 1) // It's always the same number of frames to the user's call.
-		w.WriteString(fmt.Sprintf("%s:%d", file, line))
-		w.WriteString(separator)
-	}
+	if p.withLocation || p.withCaller {
+		caller, file, line := Caller(p.depth + 1)
 
-	if withCaller {
-		w.WriteString("func=")
-		w.WriteString(callerName(depth + 1))
-		w.WriteString(separator)
+		if p.withLocation {
+			w.WriteString("src=")
+			// It's always the same number of frames to the user's call.
+			w.WriteString(fmt.Sprintf("%s:%d", file, line))
+			w.WriteString(p.separator)
+		}
+
+		if p.withCaller {
+			w.WriteString("func=")
+			w.WriteString(caller)
+			w.WriteString(p.separator)
+		}
 	}
 
 	var str string
 	for i, count := 0, len(entries); i < count; i++ {
-		if escape {
+		if p.escape {
 			str = EscapedString(entries[i])
 		} else {
 			str = fmt.Sprint(entries[i])
 		}
 		w.WriteString(str)
 		if i+1 < count {
-			w.WriteString(separator)
+			w.WriteString(p.separator)
 		}
+	}
+
+	if p.colorOff {
+		w.Write(ColorOff)
 	}
 
 	l := len(str)
@@ -209,15 +235,17 @@ func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		c.w.WriteString(l.Char())
 		c.w.WriteString(" | ")
 	}
-	if pkg != "" {
-		c.w.WriteString(pkg)
-		c.w.WriteString(": ")
+	params := writeEntriesParams{
+		pkg:          pkg,
+		separator:    ", ",
+		depth:        depth + 1,
+		withCaller:   c.withCaller,
+		withLocation: c.withLocation,
+		escape:       escape,
+		colorOff:     c.color,
 	}
 
-	writeEntries(c.w, "", ", ", depth+1, c.withCaller, c.withLocation, escape, entries...)
-	if c.color {
-		c.w.Write(ColorOff)
-	}
+	writeEntries(c.w, &params, entries...)
 
 	c.Flush()
 }
@@ -229,19 +257,19 @@ func (c *PrettyFormatter) Flush() {
 
 // color pallete map
 var (
-	ColorOff         = []byte("\033[0m")
-	colorRed         = []byte("\033[0;31m")
-	colorGreen       = []byte("\033[0;32m")
-	colorOrange      = []byte("\033[0;33m")
-	colorBlue        = []byte("\033[0;34m")
-	colorPurple      = []byte("\033[0;35m")
-	colorCyan        = []byte("\033[0;36m")
-	colorGray        = []byte("\033[0;37m") // TRACE
+	ColorOff = []byte("\033[0m")
+	// colorRed         = []byte("\033[0;31m")
+	// colorGreen       = []byte("\033[0;32m")
+	// colorOrange      = []byte("\033[0;33m")
+	// colorBlue        = []byte("\033[0;34m")
+	// colorPurple      = []byte("\033[0;35m")
+	// colorCyan        = []byte("\033[0;36m")
 	colorLightRed    = []byte("\033[0;91m") // ERROR
 	colorLightGreen  = []byte("\033[0;92m") // NOTICE
 	colorLightOrange = []byte("\033[0;93m") // WARN
-	colorLightBlue   = []byte("\033[0;94m") // DEBUG
 	colorLightCyan   = []byte("\033[0;96m") // INFO
+	colorGray        = []byte("\033[0;37m") // TRACE
+	colorDebug       = []byte("\033[0;35m") // DEBUG
 )
 
 // LevelColors provides colors map
@@ -251,7 +279,7 @@ var LevelColors = map[LogLevel][]byte{
 	WARNING:  colorLightOrange,
 	NOTICE:   colorLightGreen,
 	INFO:     colorLightCyan,
-	DEBUG:    colorGray,
+	DEBUG:    colorDebug,
 	TRACE:    colorGray,
 }
 
@@ -320,8 +348,23 @@ func EscapedString(value interface{}) string {
 	return strings.TrimSpace(buffer.String())
 }
 
-func callerName(depth int) string {
-	pc, _, _, ok := runtime.Caller(depth)
+// Caller returns caller function name, and location
+func Caller(depth int) (name string, file string, line int) {
+	pc, file, line, ok := runtime.Caller(depth)
+
+	if !ok {
+		file = "???"
+		line = 1
+	} else {
+		slash := strings.LastIndex(file, "/")
+		if slash >= 0 {
+			file = file[slash+1:]
+		}
+	}
+	if line < 0 {
+		line = 0 // not a real line number
+	}
+
 	details := runtime.FuncForPC(pc)
 	if ok && details != nil {
 		name := path.Base(details.Name())
@@ -337,26 +380,9 @@ func callerName(depth int) string {
 				}
 			}
 		}
-		return name
+		return name, file, line
 	}
-	return "n/a"
-}
-
-func location(depth int) (string, int) {
-	_, file, line, ok := runtime.Caller(depth) // It's always the same number of frames to the user's call.
-	if !ok {
-		file = "???"
-		line = 1
-	} else {
-		slash := strings.LastIndex(file, "/")
-		if slash >= 0 {
-			file = file[slash+1:]
-		}
-	}
-	if line < 0 {
-		line = 0 // not a real line number
-	}
-	return file, line
+	return "func", file, line
 }
 
 type config struct {
