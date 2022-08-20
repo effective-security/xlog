@@ -251,7 +251,7 @@ func NewPackageLogger(repo string, pkg string) (p *PackageLogger) {
 func getRepoLogger(repo string) (RepoLogger, error) {
 	repoLogger, err := GetRepoLogger(repo)
 	if err != nil {
-		return nil, errors.WithMessagef(err, "repo=%s, reason='failed to get a repo logger'", repo)
+		return nil, errors.WithMessagef(err, "failed to get repo logger: %s", repo)
 	}
 	return repoLogger, nil
 }
@@ -278,4 +278,53 @@ func SetPackageLogLevel(repo, pkg string, l LogLevel) {
 			p.level = l
 		}
 	}
+}
+
+// RepoLogLevel contains information about the log level per repo. Use * to set up global level.
+type RepoLogLevel struct {
+	// Repo specifies the repo name, or '*' for all repos [Global]
+	Repo string `json:"repo,omitempty" yaml:"repo,omitempty"`
+	// Package specifies the package name
+	Package string `json:"package,omitempty" yaml:"package,omitempty"`
+	// Level specifies the log level for the repo [ERROR,WARNING,NOTICE,INFO,DEBUG,TRACE].
+	Level string `json:"level,omitempty" yaml:"level,omitempty"`
+}
+
+// SetRepoLevels sets repo log levels per package
+func SetRepoLevels(cfg []RepoLogLevel) {
+	for _, ll := range cfg {
+		SetRepoLevel(ll)
+	}
+}
+
+// SetRepoLevel sets repo log level
+func SetRepoLevel(cfg RepoLogLevel) {
+	l, _ := ParseLevel(cfg.Level)
+	if cfg.Repo == "*" {
+		SetGlobalLogLevel(l)
+	} else {
+		SetPackageLogLevel(cfg.Repo, cfg.Package, l)
+	}
+}
+
+// GetRepoLevels returns currently configured levels
+func GetRepoLevels() []RepoLogLevel {
+	logger.Lock()
+	defer logger.Unlock()
+
+	list := make([]RepoLogLevel, 0, len(logger.repoMap))
+	for repo, v := range logger.repoMap {
+		for pkg, rl := range v {
+			if pkg == "" {
+				pkg = "*"
+			}
+			list = append(list, RepoLogLevel{
+				Repo:    repo,
+				Package: pkg,
+				Level:   rl.level.String(),
+			})
+		}
+	}
+
+	return list
 }
