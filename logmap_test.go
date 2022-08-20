@@ -125,3 +125,16 @@ func Test_GetRepoLogger(t *testing.T) {
 	assert.Equal(t, xlog.NOTICE, mm["pkg2"])
 	assert.Equal(t, xlog.DEBUG, mm["pkg3"])
 }
+
+func Test_GetRepoLevels(t *testing.T) {
+	list := xlog.GetRepoLevels()
+	assert.NotEmpty(t, list)
+
+	list = append(list, xlog.RepoLogLevel{
+		Repo:    "*",
+		Package: "",
+		Level:   "DEBUG",
+	})
+
+	xlog.SetRepoLevels(list)
+}
