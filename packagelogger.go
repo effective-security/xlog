@@ -15,6 +15,7 @@
 package xlog
 
 import (
+	"context"
 	"fmt"
 	"os"
 )
@@ -178,6 +179,17 @@ func (p *PackageLogger) Info(entries ...interface{}) {
 
 // KV prints key=value pairs
 func (p *PackageLogger) KV(l LogLevel, entries ...interface{}) {
+	p.internalLog(kv, calldepth, l, entries...)
+}
+
+// ContextKV logs entries in "key1=value1, ..., keyN=valueN" format,
+// and add log entries from ctx as well.
+// ContextWithKV method can be used to add extra values to context
+func (p *PackageLogger) ContextKV(ctx context.Context, l LogLevel, entries ...interface{}) {
+	extra := ContextEntries(ctx)
+	if len(extra) > 0 {
+		entries = append(extra, entries...)
+	}
 	p.internalLog(kv, calldepth, l, entries...)
 }
 

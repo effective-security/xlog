@@ -15,6 +15,7 @@
 package xlog
 
 import (
+	"context"
 	"log"
 )
 
@@ -54,6 +55,11 @@ func (l *NilLogger) Infof(format string, args ...interface{}) {}
 
 // KV does nothing
 func (l *NilLogger) KV(_ LogLevel, entries ...interface{}) {}
+
+// ContextKV logs entries in "key1=value1, ..., keyN=valueN" format,
+// and add log entries from ctx as well.
+// ContextWithKV method can be used to add extra values to context
+func (l *NilLogger) ContextKV(_ context.Context, _ LogLevel, _ ...interface{}) {}
 
 // Error does nothing
 func (l *NilLogger) Error(entries ...interface{}) {}
