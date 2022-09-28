@@ -1,6 +1,7 @@
 package xlog_test
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -54,8 +55,8 @@ func ExampleStringFormatter() {
 	// time=2021-04-01T00:00:00Z level=W pkg=format func=ExampleStringFormatter "string1" "string 2" ["item 1","item 2"] {"Foo":"foo","Bar":5}
 	// time=2021-04-01T00:00:00Z level=W pkg=format_kv func=ExampleStringFormatter key1="value 2" key2=2 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
 	// time=2021-04-01T00:00:00Z level=E pkg=string_formatter func=ExampleStringFormatter prefix="addon" reason="with time, level, caller" err="just a string" number=123
-	// time=2021-04-01T00:00:00Z level=E pkg=string_formatter src=example_test.go:38 func=ExampleStringFormatter prefix="addon" reason="location" err="just a string" number=123 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
-	// pkg=string_formatter src=example_test.go:46 prefix="addon" reason="skip time, level, caller" err="just a string" number=123 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
+	// time=2021-04-01T00:00:00Z level=E pkg=string_formatter src=example_test.go:39 func=ExampleStringFormatter prefix="addon" reason="location" err="just a string" number=123 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
+	// pkg=string_formatter src=example_test.go:47 prefix="addon" reason="skip time, level, caller" err="just a string" number=123 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
 }
 
 func ExamplePrettyFormatter() {
@@ -109,8 +110,8 @@ func ExamplePrettyFormatter() {
 	// 2021-04-01 00:00:00.000000 N | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 	// 2021-04-01 00:00:00.000000 T | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 	// 2021-04-01 00:00:00.000000 D | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
-	// 2021-04-01 00:00:00.000000 E | pkg=pretty_formatter, src=example_test.go:89, func=ExamplePrettyFormatter, reason="location", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
-	// pkg=pretty_formatter, src=example_test.go:97, reason="skip time, level, caller", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
+	// 2021-04-01 00:00:00.000000 E | pkg=pretty_formatter, src=example_test.go:90, func=ExamplePrettyFormatter, reason="location", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
+	// pkg=pretty_formatter, src=example_test.go:98, reason="skip time, level, caller", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 }
 
 func ExampleJSONFormatter() {
@@ -155,6 +156,19 @@ func ExampleJSONFormatter() {
 	// {"func":"ExampleJSONFormatter","level":"W","msg":"string1string 2[item 1 item 2] {foo 5 shoud not print}","pkg":"format","time":"2021-04-01T00:00:00Z"}
 	// {"func":"ExampleJSONFormatter","key1":"value 2","key2":2,"level":"W","list":["item 1","item 2"],"obj":{"Foo":"foo","Bar":5},"pkg":"format_kv","time":"2021-04-01T00:00:00Z"}
 	// {"err":"just a string","func":"ExampleJSONFormatter","level":"E","number":123,"pkg":"json_formatter","reason":"with time, level, caller","time":"2021-04-01T00:00:00Z"}
-	// {"err":"just a string","func":"ExampleJSONFormatter","level":"E","list":["item 1","item 2"],"number":123,"obj":{"Foo":"foo","Bar":5},"pkg":"json_formatter","reason":"location","src":"example_test.go:139","time":"2021-04-01T00:00:00Z"}
-	// {"err":"just a string","list":["item 1","item 2"],"number":123,"obj":{"Foo":"foo","Bar":5},"pkg":"json_formatter","reason":"skip time, level, caller","src":"example_test.go:147"}
+	// {"err":"just a string","func":"ExampleJSONFormatter","level":"E","list":["item 1","item 2"],"number":123,"obj":{"Foo":"foo","Bar":5},"pkg":"json_formatter","reason":"location","src":"example_test.go:140","time":"2021-04-01T00:00:00Z"}
+	// {"err":"just a string","list":["item 1","item 2"],"number":123,"obj":{"Foo":"foo","Bar":5},"pkg":"json_formatter","reason":"skip time, level, caller","src":"example_test.go:148"}
+}
+
+func ExampleContextWithKV() {
+	var logger = xlog.NewPackageLogger("github.com/effective-security/xlog", "string_formatter")
+	f := xlog.NewStringFormatter(os.Stdout)
+	xlog.SetFormatter(f)
+
+	ctx := xlog.ContextWithKV(context.Background(), "key1", 1, "key2", "val2")
+
+	logger.ContextKV(ctx, xlog.INFO, "k3", 3)
+
+	// Output:
+	// time=2021-04-01T00:00:00Z level=I pkg=string_formatter func=ExampleContextWithKV key1=1 key2="val2" k3=3
 }
