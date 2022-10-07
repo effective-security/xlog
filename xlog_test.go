@@ -41,14 +41,14 @@ func originateError(errmsg string, level int) error {
 
 func traceError(errmsg string, levels int) error {
 	if levels > 0 {
-		return errors.WithStack(traceError(errmsg, levels-1))
+		return traceError(errmsg, levels-1)
 	}
 	return errors.WithStack(originateError(errmsg, 0))
 }
 
 func annotateError(errmsg string, levels int) error {
 	if levels > 0 {
-		return errors.WithStack(annotateError(errmsg, levels-1))
+		return annotateError(errmsg, levels-1)
 	}
 	return errors.WithMessagef(originateError(errmsg, 0), "annotateError, level=%d", levels)
 }
@@ -506,4 +506,52 @@ func Test_NilFormatter(t *testing.T) {
 	f.FormatKV("pkg", xlog.DEBUG, 1)
 	f.Format("pkg", xlog.DEBUG, 1)
 	f.Flush()
+}
+
+func TestErrorsStats(t *testing.T) {
+	errsCount := 0
+	xlog.OnError(func(pkg string) {
+		errsCount++
+	})
+
+	err := f1(true)
+
+	var b bytes.Buffer
+	writer := bufio.NewWriter(&b)
+
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller))
+
+	logger.KV(xlog.ERROR, "err", err)
+	logger.KV(xlog.WARNING, "err", err)
+
+	//fmt.Println(b.String())
+	//fmt.Printf("%+v", err)
+	assert.Equal(t, 1, errsCount)
+}
+
+func f1(stack bool) error {
+	err := f2(stack)
+	if stack {
+		return errors.WithStack(err)
+	}
+	return err
+}
+func f2(stack bool) error {
+	err := f3(stack)
+	if stack {
+		return errors.WithStack(err)
+	}
+	return err
+}
+
+func f3(stack bool) error {
+	err := f4()
+	if stack {
+		return errors.WithStack(err)
+	}
+	return err
+}
+func f4() error {
+	return fmt.Errorf("fmt error")
+	//return errors.New("original error")
 }
