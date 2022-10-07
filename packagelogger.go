@@ -52,6 +52,11 @@ func (p *PackageLogger) WithValues(keysAndValues ...interface{}) KeyValueLogger 
 func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, entries ...interface{}) {
 	logger.Lock()
 	defer logger.Unlock()
+
+	if inLevel == ERROR && logger.onError != nil {
+		logger.onError(p.pkg)
+	}
+
 	if inLevel != CRITICAL && p.level < inLevel {
 		return
 	}
@@ -70,6 +75,11 @@ func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, 
 func (p *PackageLogger) internalLogf(depth int, inLevel LogLevel, format string, args ...interface{}) {
 	logger.Lock()
 	defer logger.Unlock()
+
+	if inLevel == ERROR && logger.onError != nil {
+		logger.onError(p.pkg)
+	}
+
 	if inLevel != CRITICAL && p.level < inLevel {
 		return
 	}

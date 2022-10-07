@@ -119,14 +119,26 @@ func ParseLevel(s string) (LogLevel, error) {
 // RepoLogger specifies a map of repo => PackageLogger
 type RepoLogger map[string]*PackageLogger
 
+// OnErrorFn allows to be called when an error is logged in a package
+type OnErrorFn func(pkg string)
+
 type loggerStruct struct {
 	sync.Mutex
 	repoMap   map[string]RepoLogger
 	formatter Formatter
+	onError   OnErrorFn
 }
 
 // logger is the global logger
 var logger = new(loggerStruct)
+
+// OnError allows to specify a callback for ERROR levels.
+// This is useful to reports metrics on ERROR in a package
+func OnError(fn OnErrorFn) {
+	logger.Lock()
+	defer logger.Unlock()
+	logger.onError = fn
+}
 
 // SetGlobalLogLevel sets the log level for all packages in all repositories
 // registered with PackageLogger.

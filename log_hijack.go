@@ -16,6 +16,7 @@ package xlog
 
 import (
 	"log"
+	"strings"
 )
 
 // Stderr is an instance of standard logger to Stderr
@@ -37,6 +38,6 @@ type packageWriter struct {
 }
 
 func (p packageWriter) Write(b []byte) (int, error) {
-	p.pl.internalLog(plain, calldepth+2, INFO, string(b))
+	p.pl.internalLog(kv, calldepth+2, INFO, "log", strings.TrimSpace(string(b)))
 	return len(b), nil
 }

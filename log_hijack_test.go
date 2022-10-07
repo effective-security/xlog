@@ -19,7 +19,7 @@ func Test_Hijack(t *testing.T) {
 	log.SetPrefix("prefix:")
 	log.Println("testing")
 
-	assert.Equal(t, "time=2021-04-01T00:00:00Z level=I func=Test_Hijack \"prefix:testing\\n\"\n", w.String())
+	assert.Equal(t, "time=2021-04-01T00:00:00Z level=I func=Test_Hijack log=\"prefix:testing\"\n", w.String())
 }
 
 func Test_Hijack_Error(t *testing.T) {
