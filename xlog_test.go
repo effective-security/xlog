@@ -461,8 +461,8 @@ func Test_ColorFormatterDebug(t *testing.T) {
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 
-	logger.Error("unable to find: ", fmt.Errorf("not found"))
-	expected = "2021-04-01 00:00:00.000000 \x1b[0;91mE | pkg=xlog_test, \"unable to find: \", \"not found\"\x1b[0m\n"
+	logger.Error("\tunable to find: \n", fmt.Errorf("not found"))
+	expected = "2021-04-01 00:00:00.000000 \x1b[0;91mE | pkg=xlog_test, \"unable to find:\", \"not found\"\x1b[0m\n"
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 
@@ -506,6 +506,21 @@ func Test_NilFormatter(t *testing.T) {
 	f.FormatKV("pkg", xlog.DEBUG, 1)
 	f.Format("pkg", xlog.DEBUG, 1)
 	f.Flush()
+}
+
+func TestEscapedString(t *testing.T) {
+
+	stru := struct {
+		Foo string
+		B   bool
+		I   int
+	}{Foo: "foo", B: true, I: -1}
+
+	assert.Equal(t, "1", xlog.EscapedString(1))
+	assert.Equal(t, "false", xlog.EscapedString(false))
+	assert.Equal(t, `{"Foo":"foo","B":true,"I":-1}`, xlog.EscapedString(stru))
+	assert.Equal(t, `"str"`, xlog.EscapedString("str"))
+	assert.Equal(t, `"str"`, xlog.EscapedString("\t\nstr\n"))
 }
 
 func TestErrorsStats(t *testing.T) {
