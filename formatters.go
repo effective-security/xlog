@@ -334,9 +334,11 @@ func flatten(kvList ...interface{}) []interface{} {
 
 // EscapedString returns string value stuitable for logging
 func EscapedString(value interface{}) string {
-	if _, ok := value.(json.Marshaler); !ok {
+	if s, ok := value.(string); ok {
+		value = strings.TrimSpace(s)
+	} else if _, ok := value.(json.Marshaler); !ok {
 		if s, ok := value.(fmt.Stringer); ok {
-			value = s.String()
+			value = strings.TrimSpace(s.String())
 		} else if err, ok := value.(error); ok {
 			// print the full details
 			value = fmt.Sprintf("%+v", err)
