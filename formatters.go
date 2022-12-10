@@ -42,6 +42,8 @@ const (
 	FormatWithLocation
 	// FormatWithColor allows to print color logs
 	FormatWithColor
+	// FormatPrintEmpty allows to print empty values
+	FormatPrintEmpty
 )
 
 // Formatter defines an interface for formatting logs
@@ -87,7 +89,7 @@ func (s *StringFormatter) Options(ops ...FormatterOption) Formatter {
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
 func (s *StringFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...interface{}) {
-	s.format(pkg, l, depth+1, false, flatten(entries...)...)
+	s.format(pkg, l, depth+1, false, flatten(s.config.printEmpty, entries...)...)
 }
 
 // Format log entry string to the stream
@@ -115,6 +117,7 @@ func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		withCaller:   s.withCaller,
 		withLocation: s.withLocation,
 		escape:       escape,
+		printEmpty:   s.printEmpty,
 	}
 	writeEntries(s.w, &params, entries...)
 	s.Flush()
@@ -128,6 +131,7 @@ type writeEntriesParams struct {
 	withLocation bool
 	escape       bool
 	colorOff     bool
+	printEmpty   bool
 }
 
 func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...interface{}) {
@@ -161,9 +165,11 @@ func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...interface{}
 		} else {
 			str = fmt.Sprint(entries[i])
 		}
-		w.WriteString(str)
-		if i+1 < count {
-			w.WriteString(p.separator)
+		if str != "" || p.printEmpty {
+			w.WriteString(str)
+			if i+1 < count {
+				w.WriteString(p.separator)
+			}
 		}
 	}
 
@@ -211,7 +217,7 @@ func (c *PrettyFormatter) Options(ops ...FormatterOption) Formatter {
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
 func (c *PrettyFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...interface{}) {
-	c.format(pkg, l, depth+1, false, flatten(entries...)...)
+	c.format(pkg, l, depth+1, false, flatten(c.printEmpty, entries...)...)
 }
 
 // Format log entry string to the stream
@@ -243,6 +249,7 @@ func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		withLocation: c.withLocation,
 		escape:       escape,
 		colorOff:     c.color,
+		printEmpty:   c.printEmpty,
 	}
 
 	writeEntries(c.w, &params, entries...)
@@ -313,9 +320,9 @@ func (*NilFormatter) Flush() {
 	// noop
 }
 
-func flatten(kvList ...interface{}) []interface{} {
+func flatten(printEmpty bool, kvList ...interface{}) []interface{} {
 	size := len(kvList)
-	list := make([]interface{}, size/2)
+	list := make([]interface{}, 0, size/2)
 
 	for i, j := 0, 0; i < size; i += 2 {
 		k, ok := kvList[i].(string)
@@ -326,8 +333,14 @@ func flatten(kvList ...interface{}) []interface{} {
 		if i+1 < size {
 			v = kvList[i+1]
 		}
-		list[j] = k + "=" + EscapedString(v)
-		j++
+		if v == nil && !printEmpty {
+			continue
+		}
+		val := EscapedString(v)
+		if val != `""` || printEmpty {
+			list = append(list, k+"="+val)
+			j++
+		}
 	}
 	return list
 }
@@ -392,6 +405,7 @@ type config struct {
 	withCaller   bool
 	skipTime     bool
 	skipLevel    bool
+	printEmpty   bool
 	withLocation bool
 	color        bool
 }
@@ -412,6 +426,8 @@ func (c *config) options(ops []FormatterOption) {
 			c.withLocation = true
 		case FormatWithColor:
 			c.color = true
+		case FormatPrintEmpty:
+			c.printEmpty = true
 		}
 	}
 }
