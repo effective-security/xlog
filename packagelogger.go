@@ -86,7 +86,7 @@ func (p *PackageLogger) internalLogf(depth int, inLevel LogLevel, format string,
 	if logger.formatter != nil {
 		entries := []interface{}{fmt.Sprintf(format, args...)}
 		if len(p.values) > 0 {
-			entries = append(flatten(p.values...), entries)
+			entries = append(flatten(false, p.values...), entries)
 		}
 
 		logger.formatter.Format(p.pkg, inLevel, depth+1, entries...)

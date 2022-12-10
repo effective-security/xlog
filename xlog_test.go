@@ -135,6 +135,25 @@ func Test_PrettyFormatter(t *testing.T) {
 	b.Reset()
 }
 
+func Test_WithEmpty(t *testing.T) {
+	var b bytes.Buffer
+	writer := bufio.NewWriter(&b)
+
+	xlog.SetGlobalLogLevel(xlog.INFO)
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatPrintEmpty))
+
+	logger.KV(xlog.INFO, "k1", 1, "k2", false, "empty", "", "null", nil)
+	expected := "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=1, k2=false, empty=\"\", null=null\n"
+	assert.Equal(t, expected, b.String())
+	b.Reset()
+
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer))
+	logger.KV(xlog.INFO, "k1", 1, "k2", false, "empty", "", "null", nil)
+	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=1, k2=false\n"
+	assert.Equal(t, expected, b.String())
+	b.Reset()
+}
+
 func Test_WithTracedError(t *testing.T) {
 	wd, err := os.Getwd() // package dir
 	require.NoError(t, err)

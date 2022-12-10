@@ -49,6 +49,7 @@ func ExampleStringFormatter() {
 		"number", 123,
 		"list", list,
 		"obj", obj,
+		"empty", "",
 	)
 
 	// Output:
@@ -100,6 +101,8 @@ func ExamplePrettyFormatter() {
 		"number", 123,
 		"list", list,
 		"obj", obj,
+		"empty", "",
+		"nil", nil,
 	)
 
 	// Output:
@@ -110,8 +113,8 @@ func ExamplePrettyFormatter() {
 	// 2021-04-01 00:00:00.000000 N | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 	// 2021-04-01 00:00:00.000000 T | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 	// 2021-04-01 00:00:00.000000 D | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
-	// 2021-04-01 00:00:00.000000 E | pkg=pretty_formatter, src=example_test.go:90, func=ExamplePrettyFormatter, reason="location", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
-	// pkg=pretty_formatter, src=example_test.go:98, reason="skip time, level, caller", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
+	// 2021-04-01 00:00:00.000000 E | pkg=pretty_formatter, src=example_test.go:91, func=ExamplePrettyFormatter, reason="location", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
+	// pkg=pretty_formatter, src=example_test.go:99, reason="skip time, level, caller", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 }
 
 func ExampleJSONFormatter() {
@@ -156,8 +159,8 @@ func ExampleJSONFormatter() {
 	// {"func":"ExampleJSONFormatter","level":"W","msg":"string1string 2[item 1 item 2] {foo 5 shoud not print}","pkg":"format","time":"2021-04-01T00:00:00Z"}
 	// {"func":"ExampleJSONFormatter","key1":"value 2","key2":2,"level":"W","list":["item 1","item 2"],"obj":{"Foo":"foo","Bar":5},"pkg":"format_kv","time":"2021-04-01T00:00:00Z"}
 	// {"err":"just a string","func":"ExampleJSONFormatter","level":"E","number":123,"pkg":"json_formatter","reason":"with time, level, caller","time":"2021-04-01T00:00:00Z"}
-	// {"err":"just a string","func":"ExampleJSONFormatter","level":"E","list":["item 1","item 2"],"number":123,"obj":{"Foo":"foo","Bar":5},"pkg":"json_formatter","reason":"location","src":"example_test.go:140","time":"2021-04-01T00:00:00Z"}
-	// {"err":"just a string","list":["item 1","item 2"],"number":123,"obj":{"Foo":"foo","Bar":5},"pkg":"json_formatter","reason":"skip time, level, caller","src":"example_test.go:148"}
+	// {"err":"just a string","func":"ExampleJSONFormatter","level":"E","list":["item 1","item 2"],"number":123,"obj":{"Foo":"foo","Bar":5},"pkg":"json_formatter","reason":"location","src":"example_test.go:143","time":"2021-04-01T00:00:00Z"}
+	// {"err":"just a string","list":["item 1","item 2"],"number":123,"obj":{"Foo":"foo","Bar":5},"pkg":"json_formatter","reason":"skip time, level, caller","src":"example_test.go:151"}
 }
 
 func ExampleContextWithKV() {
