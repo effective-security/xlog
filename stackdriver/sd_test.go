@@ -12,6 +12,20 @@ import (
 
 var logger = xlog.NewPackageLogger("github.com/effective-security/xlog", "stackdriver")
 
+func Test_FormatterOptions(t *testing.T) {
+	var b bytes.Buffer
+	writer := bufio.NewWriter(&b)
+
+	xlog.SetGlobalLogLevel(xlog.INFO)
+	xlog.SetFormatter(NewFormatter(writer, "sd").
+		Options(xlog.FormatWithCaller, xlog.FormatWithLocation, xlog.FormatSkipTime, xlog.FormatPrintEmpty))
+
+	logger.KV(xlog.INFO, "k1", 1, "k2", false, "nil", nil, "empty", "")
+	result := b.String()
+	assert.Equal(t, "{\"logName\":\"sd\",\"component\":\"stackdriver\",\"textPayload\":\"src=Test_FormatterOptions, k1=1, k2=false, nil=null, empty=\\\"\\\"\",\"severity\":\"INFO\",\"sourceLocation\":{\"file\":\"sd_test.go\",\"line\":23,\"function\":\"Test_FormatterOptions\"}}\n", result)
+	b.Reset()
+}
+
 func Test_Formatter(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
@@ -29,14 +43,14 @@ func Test_Formatter(t *testing.T) {
 		Foo string
 	}{Foo: "bar"}
 
-	logger.KV(xlog.INFO, "k1", 1, "k2", false, "k3", k3)
+	logger.KV(xlog.INFO, "k1", 1, "k2", false, "k3", k3, "nil", nil, "empty", "")
 	result = b.String()
 	assert.Contains(t, result, "\"textPayload\":\"src=Test_Formatter, k1=1, k2=false, k3={\\\"Foo\\\":\\\"bar\\\"}\",\"severity\":\"INFO\",\"sourceLocation\":{\"function\":\"Test_Formatter\"}}\n")
 	b.Reset()
 
 	logger.KV(xlog.ERROR, "err", fmt.Errorf("log error"))
 	result = b.String()
-	assert.Contains(t, result, "\"textPayload\":\"src=Test_Formatter, err=\\\"log error\\\"\",\"severity\":\"ERROR\",\"sourceLocation\":{\"file\":\"sd_test.go\",\"line\":37,\"function\":\"Test_Formatter\"}}\n")
+	assert.Contains(t, result, "\"textPayload\":\"src=Test_Formatter, err=\\\"log error\\\"\",\"severity\":\"ERROR\",\"sourceLocation\":{\"file\":\"sd_test.go\",\"line\":51,\"function\":\"Test_Formatter\"}}\n")
 	b.Reset()
 }
 
