@@ -64,7 +64,7 @@ func NewFormatter(w io.Writer, logName string) xlog.Formatter {
 		logName: logName,
 		config: config{
 			withCaller: true,
-			skipTime:   true,
+			skipTime:   false,
 		},
 	}
 }
@@ -78,7 +78,7 @@ func (c *formatter) Options(ops ...xlog.FormatterOption) xlog.Formatter {
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
 func (c *formatter) FormatKV(pkg string, level xlog.LogLevel, depth int, entries ...interface{}) {
-	c.Format(pkg, level, depth+1, flatten(entries...))
+	c.Format(pkg, level, depth+1, flatten(c.printEmpty, entries...))
 }
 
 // Format log entry string to the stream
@@ -90,11 +90,14 @@ func (c *formatter) Format(pkg string, l xlog.LogLevel, depth int, entries ...in
 
 	fn, file, line := callerName(depth + 1)
 
-	str := "src=" + fn + ", " + fmt.Sprint(entries...)
+	str := fmt.Sprint(entries...)
+	if c.config.withCaller {
+		str = "src=" + fn + ", " + str
+	}
+
 	ee := entry{
 		LogName:   c.logName,
 		Component: pkg,
-		Time:      time.Now().UTC().Format(time.RFC3339),
 		Message:   str,
 		Severity:  severity,
 		Source: &reportLocation{
@@ -102,7 +105,11 @@ func (c *formatter) Format(pkg string, l xlog.LogLevel, depth int, entries ...in
 		},
 	}
 
-	if l <= xlog.ERROR {
+	if !c.config.skipTime {
+		ee.Time = time.Now().UTC().Format(time.RFC3339)
+	}
+
+	if c.debug || l <= xlog.ERROR {
 		ee.Source.FilePath = path.Base(file)
 		ee.Source.LineNumber = line
 	}
@@ -136,9 +143,10 @@ type reportLocation struct {
 	Function   string `json:"function,omitempty"`
 }
 
-func flatten(kvList ...interface{}) string {
+func flatten(printEmpty bool, kvList ...interface{}) string {
 	size := len(kvList)
 	buf := bytes.Buffer{}
+	dirty := false
 	for i := 0; i < size; i += 2 {
 		k, ok := kvList[i].(string)
 		if !ok {
@@ -148,14 +156,23 @@ func flatten(kvList ...interface{}) string {
 		if i+1 < size {
 			v = kvList[i+1]
 		}
-		if i > 0 {
+		if v == nil && !printEmpty {
+			continue
+		}
+
+		val := String(v)
+		if (val == "" || val == `""`) && !printEmpty {
+			continue
+		}
+
+		if dirty {
 			buf.WriteRune(',')
 			buf.WriteRune(' ')
 		}
 		buf.WriteString(k)
 		buf.WriteString("=")
-		buf.WriteString(String(v))
-
+		buf.WriteString(val)
+		dirty = true
 	}
 	return buf.String()
 }
@@ -202,11 +219,11 @@ type config struct {
 	withCaller bool
 	skipTime   bool
 	debug      bool
-	color      bool
+	printEmpty bool
 }
 
 // Options allows to configure formatter behavior
-func (c config) options(ops []xlog.FormatterOption) {
+func (c *config) options(ops []xlog.FormatterOption) {
 	for _, op := range ops {
 		switch op {
 		case xlog.FormatWithCaller:
@@ -217,8 +234,8 @@ func (c config) options(ops []xlog.FormatterOption) {
 			c.skipTime = true
 		case xlog.FormatWithLocation:
 			c.debug = true
-		case xlog.FormatWithColor:
-			c.color = true
+		case xlog.FormatPrintEmpty:
+			c.printEmpty = true
 		}
 	}
 }
