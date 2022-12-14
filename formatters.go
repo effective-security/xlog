@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -347,16 +349,37 @@ func flatten(printEmpty bool, kvList ...interface{}) []interface{} {
 
 // EscapedString returns string value stuitable for logging
 func EscapedString(value interface{}) string {
-	if s, ok := value.(string); ok {
-		value = strings.TrimSpace(s)
-	} else if _, ok := value.(json.Marshaler); !ok {
-		if s, ok := value.(fmt.Stringer); ok {
-			value = strings.TrimSpace(s.String())
-		} else if err, ok := value.(error); ok {
-			// print the full details
-			value = fmt.Sprintf("%+v", err)
+	switch typ := value.(type) {
+	case error:
+		value = fmt.Sprintf("%+v", typ)
+	case string:
+		value = strings.TrimSpace(typ)
+		// pass through for encoding
+	case uint64:
+		return strconv.FormatUint(typ, 10)
+	case uint:
+		return strconv.FormatUint(uint64(typ), 10)
+	case int64:
+		return strconv.FormatInt(typ, 10)
+	case int:
+		return strconv.FormatInt(int64(typ), 10)
+	case bool:
+		if typ {
+			return "true"
 		}
+		return "false"
+	case reflect.Type:
+		value = typ.String()
+	case time.Time:
+		value = typ.Format(time.RFC3339)
+		// pass through for encoding
+	case fmt.Stringer:
+		value = strings.TrimSpace(typ.String())
+		// pass through for encoding
+	default:
+		// keep as is to json.Encode
 	}
+
 	buffer := &bytes.Buffer{}
 	encoder := json.NewEncoder(buffer)
 	encoder.SetEscapeHTML(false)

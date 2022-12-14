@@ -16,9 +16,9 @@ package xlog_test
 import (
 	"bufio"
 	"bytes"
+	goerrors "errors"
 	"fmt"
-	"os"
-	"strings"
+	"reflect"
 	"testing"
 	"time"
 
@@ -155,9 +155,6 @@ func Test_WithEmpty(t *testing.T) {
 }
 
 func Test_WithTracedError(t *testing.T) {
-	wd, err := os.Getwd() // package dir
-	require.NoError(t, err)
-
 	cases := []struct {
 		msg           string
 		levels        int
@@ -168,13 +165,13 @@ func Test_WithTracedError(t *testing.T) {
 			"Test_WithTracedError(1)",
 			1,
 			"E | pkg=xlog_test, \"err=[originateError: msg=Test_WithTracedError(1), level=0]\"\n",
-			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithTracedError(1), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\tgithub.com/effective-security/xlog/xlog_test.go:39\\ngithub.com/effective-security/xlog_test.traceError\\n\\tgithub.com/",
+			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithTracedError(1), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\t",
 		},
 		{
 			"Test_WithTracedError(4)",
 			2,
 			"E | pkg=xlog_test, \"err=[originateError: msg=Test_WithTracedError(4), level=0]\"\n",
-			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithTracedError(4), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\tgithub.com/effective-security/xlog/xlog_test.go:39\\ngithub.com/effective-security/xlog_test.traceError\\n\\tgithub.com/",
+			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithTracedError(4), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\t",
 		},
 	}
 
@@ -200,16 +197,12 @@ func Test_WithTracedError(t *testing.T) {
 
 		logger.Errorf("stack=[%+v]", err)
 		result = b.String()[prefixLen:]
-		// remove paths from the trace
-		result = strings.Replace(result, wd, "github.com/effective-security/xlog", -1)
-		assert.Equal(t, c.expectedStack[:256], result[:256], "[%d] case failed expectation", idx)
+		assert.Contains(t, result, c.expectedStack, "[%d] case failed expectation", idx)
 		b.Reset()
 	}
 }
 
 func Test_WithAnnotatedError(t *testing.T) {
-	wd, _ := os.Getwd() // package dir
-
 	cases := []struct {
 		msg           string
 		levels        int
@@ -220,13 +213,13 @@ func Test_WithAnnotatedError(t *testing.T) {
 			"Test_WithAnnotatedError(1)",
 			1,
 			"E | pkg=xlog_test, \"err=[annotateError, level=0: originateError: msg=Test_WithAnnotatedError(1), level=0]\"\n",
-			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithAnnotatedError(1), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\tgithub.com/effective-security/xlog/xlog_test.go:39\\ngithub.com/effective-security/xlog_test.annotateError\\n\\tgithu",
+			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithAnnotatedError(1), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\t",
 		},
 		{
 			"Test_WithAnnotatedError(4)",
 			2,
 			"E | pkg=xlog_test, \"err=[annotateError, level=0: originateError: msg=Test_WithAnnotatedError(4), level=0]\"\n",
-			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithAnnotatedError(4), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\tgithub.com/effective-security/xlog/xlog_test.go:39\\ngithub.com/effective-security/xlog_test.annotateError\\n\\tgithu",
+			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithAnnotatedError(4), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\t",
 		},
 	}
 
@@ -252,9 +245,7 @@ func Test_WithAnnotatedError(t *testing.T) {
 
 		logger.Errorf("stack=[%+v]", err)
 		result = b.String()[prefixLen:]
-		// remove paths from the trace
-		result = strings.Replace(result, wd, "github.com/effective-security/xlog", -1)
-		assert.Equal(t, c.expectedStack[:256], result[:256], "[%d] case failed expectation", idx)
+		assert.Contains(t, result, c.expectedStack, "[%d] case failed expectation", idx)
 		b.Reset()
 	}
 }
@@ -416,7 +407,7 @@ func Test_StringFormatter(t *testing.T) {
 		"err", withAnnotateError("logs error", 2),
 	)
 	result = b.String()
-	expected = "time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 bool=false time=\"2021-04-01T00:00:00Z\" strings=[\"s1\",\"s2\"] err=\"originateError: msg=logs error, level=0\\ngithub.com/effective-security/xlog_test.originateError\\n"
+	expected = "time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 bool=false time=\"2021-04-01T00:00:00Z\" strings=[\"s1\",\"s2\"] err=\"originateError: msg=logs error, level=0\\n"
 	assert.Contains(t, result, expected)
 	b.Reset()
 }
@@ -425,36 +416,6 @@ type someSvc struct{}
 
 func (s *someSvc) log(msg string) {
 	logger.Info(msg)
-}
-
-func TestXlogString(t *testing.T) {
-	date, err := time.Parse("2006-01-02", "2021-04-01")
-	require.NoError(t, err)
-
-	structVal := struct {
-		S string
-		N int
-		D time.Time
-	}{
-		"str", 1, date,
-	}
-
-	tcases := []struct {
-		name string
-		val  interface{}
-		exp  string
-	}{
-		{"int", 1, "1"},
-		{"nint", -72349568723, "-72349568723"},
-		{"bool", false, "false"},
-		{"strings", []string{"s1", "s2"}, `["s1","s2"]`},
-		{"date", date, `"2021-04-01T00:00:00Z"`},
-		{"struct", structVal, `{"S":"str","N":1,"D":"2021-04-01T00:00:00Z"}`},
-	}
-
-	for _, tc := range tcases {
-		assert.Equal(t, tc.exp, xlog.EscapedString(tc.val), tc.name)
-	}
 }
 
 func Test_ColorFormatterDebug(t *testing.T) {
@@ -535,11 +496,46 @@ func TestEscapedString(t *testing.T) {
 		I   int
 	}{Foo: "foo", B: true, I: -1}
 
-	assert.Equal(t, "1", xlog.EscapedString(1))
-	assert.Equal(t, "false", xlog.EscapedString(false))
-	assert.Equal(t, `{"Foo":"foo","B":true,"I":-1}`, xlog.EscapedString(stru))
-	assert.Equal(t, `"str"`, xlog.EscapedString("str"))
-	assert.Equal(t, `"str"`, xlog.EscapedString("\t\nstr\n"))
+	date, err := time.Parse("2006-01-02", "2021-04-01")
+	require.NoError(t, err)
+
+	structVal := struct {
+		S string
+		N int
+		D time.Time
+	}{
+		"str", 1, date,
+	}
+
+	errToTest := errors.New("issue: some error")
+
+	tcases := []struct {
+		name string
+		val  interface{}
+		exp  string
+	}{
+		{"int", 1, "1"},
+		{"uint", uint(11234123412), "11234123412"},
+		{"int64", int64(11234123412), "11234123412"},
+		{"uint64", uint64(11234123412), "11234123412"},
+		{"nint", -72349568723, "-72349568723"},
+		{"bool", false, "false"},
+		{"true", true, "true"},
+		{"strings", []string{"s1", "s2"}, `["s1","s2"]`},
+		{"date", date, `"2021-04-01T00:00:00Z"`},
+		{"struct", structVal, `{"S":"str","N":1,"D":"2021-04-01T00:00:00Z"}`},
+		{"foo", stru, `{"Foo":"foo","B":true,"I":-1}`},
+		{"foo", reflect.TypeOf(errToTest), `"*errors.fundamental"`},
+		{"str", "str", `"str"`},
+		{"whitespace", "\t\nstr\n", `"str"`},
+		{"err", errToTest.Error(), `"issue: some error"`},
+		{"goerrors", goerrors.New("goerrors"), `"goerrors"`},
+		{"stringer", xlog.TRACE, `"TRACE"`},
+	}
+
+	for _, tc := range tcases {
+		assert.Equal(t, tc.exp, xlog.EscapedString(tc.val), tc.name)
+	}
 }
 
 func TestErrorsStats(t *testing.T) {
