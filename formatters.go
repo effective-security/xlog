@@ -17,6 +17,7 @@ package xlog
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -368,6 +369,8 @@ func EscapedString(value interface{}) string {
 			return "true"
 		}
 		return "false"
+	case []byte:
+		return "\"" + base64.StdEncoding.EncodeToString(typ) + "\""
 	case reflect.Type:
 		value = typ.String()
 	case time.Time:

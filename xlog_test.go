@@ -515,6 +515,7 @@ func TestEscapedString(t *testing.T) {
 		exp  string
 	}{
 		{"int", 1, "1"},
+		{"bytes", []byte(`bytes`), `"Ynl0ZXM="`},
 		{"uint", uint(11234123412), "11234123412"},
 		{"int64", int64(11234123412), "11234123412"},
 		{"uint64", uint64(11234123412), "11234123412"},
