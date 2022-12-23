@@ -1,0 +1,15 @@
+run:
+  skip-files: []
+
+linters:
+  enable:
+    - revive
+
+issues:
+  exclude:
+    - SA6002
+  include:
+    - EXC0012 # revive: Annoying issue about not having a comment. The rare codebase has such comments
+              # - exported (.+) should have comment( \(or a comment on this block\))? or be unexported
+    - EXC0014 # revive: Annoying issue about not having a comment. The rare codebase has such comments
+              # - comment on exported (.+) should be of the form "(.+)..."
