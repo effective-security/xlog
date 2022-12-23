@@ -88,7 +88,7 @@ func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, escape bool, k
 
 	encoder := json.NewEncoder(c.w)
 	encoder.SetEscapeHTML(false)
-	encoder.Encode(kv)
+	_ = encoder.Encode(kv)
 
 	c.Flush()
 }

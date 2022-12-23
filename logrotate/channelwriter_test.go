@@ -64,9 +64,7 @@ func TestChannelWriter_Flushes(t *testing.T) {
 func TestChannelWriter_BufioIsFlushable(t *testing.T) {
 	dest := &testWriter{}
 	w := bufio.NewWriter(dest)
-	var f flushable
-	f = w // verify that our flushable includes bufio.Writer
-	if f == nil {
+	if _, ok := any(w).(flushable); !ok {
 		t.Errorf("bufio.Writer should be a flushable")
 	}
 }
@@ -83,7 +81,7 @@ func TestChannelWriter_Writes(t *testing.T) {
 		w := []byte(fmt.Sprintf("message %d", i))
 		wcopy := append([]byte(nil), w...)
 		exp = append(exp, wcopy)
-		writer.Write(w)
+		_, _ = writer.Write(w)
 		// ensure that the writer doesn't hold onto the bytes the general
 		// expectation for io.Write is that the caller owns the data after
 		// write returns

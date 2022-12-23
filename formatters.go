@@ -103,14 +103,14 @@ func (s *StringFormatter) Format(pkg string, l LogLevel, depth int, entries ...i
 func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...interface{}) {
 	if !s.skipTime {
 		now := TimeNowFn().UTC()
-		s.w.WriteString("time=")
-		s.w.WriteString(now.Format(time.RFC3339))
-		s.w.WriteByte(' ')
+		_, _ = s.w.WriteString("time=")
+		_, _ = s.w.WriteString(now.Format(time.RFC3339))
+		_ = s.w.WriteByte(' ')
 	}
 	if !s.skipLevel {
-		s.w.WriteString("level=")
-		s.w.WriteString(l.Char())
-		s.w.WriteByte(' ')
+		_, _ = s.w.WriteString("level=")
+		_, _ = s.w.WriteString(l.Char())
+		_ = s.w.WriteByte(' ')
 	}
 
 	params := writeEntriesParams{
@@ -139,25 +139,25 @@ type writeEntriesParams struct {
 
 func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...interface{}) {
 	if p.pkg != "" {
-		w.WriteString("pkg=")
-		w.WriteString(p.pkg)
-		w.WriteString(p.separator)
+		_, _ = w.WriteString("pkg=")
+		_, _ = w.WriteString(p.pkg)
+		_, _ = w.WriteString(p.separator)
 	}
 
 	if p.withLocation || p.withCaller {
 		caller, file, line := Caller(p.depth + 1)
 
 		if p.withLocation {
-			w.WriteString("src=")
+			_, _ = w.WriteString("src=")
 			// It's always the same number of frames to the user's call.
-			w.WriteString(fmt.Sprintf("%s:%d", file, line))
-			w.WriteString(p.separator)
+			_, _ = w.WriteString(fmt.Sprintf("%s:%d", file, line))
+			_, _ = w.WriteString(p.separator)
 		}
 
 		if p.withCaller {
-			w.WriteString("func=")
-			w.WriteString(caller)
-			w.WriteString(p.separator)
+			_, _ = w.WriteString("func=")
+			_, _ = w.WriteString(caller)
+			_, _ = w.WriteString(p.separator)
 		}
 	}
 
@@ -169,21 +169,21 @@ func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...interface{}
 			str = fmt.Sprint(entries[i])
 		}
 		if str != "" || p.printEmpty {
-			w.WriteString(str)
+			_, _ = w.WriteString(str)
 			if i+1 < count {
-				w.WriteString(p.separator)
+				_, _ = w.WriteString(p.separator)
 			}
 		}
 	}
 
 	if p.colorOff {
-		w.Write(ColorOff)
+		_, _ = w.Write(ColorOff)
 	}
 
 	l := len(str)
 	endsInNL := l > 0 && str[l-1] == '\n'
 	if !endsInNL {
-		w.WriteByte('\n')
+		_ = w.WriteByte('\n')
 	}
 }
 
@@ -233,16 +233,16 @@ func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 	if !c.skipTime {
 		now := TimeNowFn()
 		ts := now.Format("2006-01-02 15:04:05")
-		c.w.WriteString(ts)
+		_, _ = c.w.WriteString(ts)
 		ms := now.Nanosecond() / 1000
-		c.w.WriteString(fmt.Sprintf(".%06d ", ms))
+		_, _ = c.w.WriteString(fmt.Sprintf(".%06d ", ms))
 	}
 	if c.color {
-		c.w.Write(LevelColors[l])
+		_, _ = c.w.Write(LevelColors[l])
 	}
 	if !c.skipLevel {
-		c.w.WriteString(l.Char())
-		c.w.WriteString(" | ")
+		_, _ = c.w.WriteString(l.Char())
+		_, _ = c.w.WriteString(" | ")
 	}
 	params := writeEntriesParams{
 		pkg:          pkg,
@@ -386,7 +386,7 @@ func EscapedString(value interface{}) string {
 	buffer := &bytes.Buffer{}
 	encoder := json.NewEncoder(buffer)
 	encoder.SetEscapeHTML(false)
-	encoder.Encode(value)
+	_ = encoder.Encode(value)
 	return strings.TrimSpace(buffer.String())
 }
 

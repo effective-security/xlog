@@ -116,8 +116,8 @@ func (c *formatter) Format(pkg string, l xlog.LogLevel, depth int, entries ...in
 
 	b, err := json.Marshal(ee)
 	if err == nil {
-		c.w.Write(b)
-		c.w.WriteByte('\n')
+		_, _ = c.w.Write(b)
+		_ = c.w.WriteByte('\n')
 	}
 
 	c.Flush()
@@ -189,7 +189,7 @@ func String(value interface{}) string {
 	buffer := &bytes.Buffer{}
 	encoder := json.NewEncoder(buffer)
 	encoder.SetEscapeHTML(false)
-	encoder.Encode(value)
+	_ = encoder.Encode(value)
 	return strings.TrimSpace(buffer.String())
 }
 
