@@ -481,6 +481,28 @@ func Test_WithCaller(t *testing.T) {
 	b.Reset()
 }
 
+func Test_WithJSONError(t *testing.T) {
+	var b bytes.Buffer
+	writer := bufio.NewWriter(&b)
+
+	xlog.SetFormatter(xlog.NewJSONFormatter(writer).Options(xlog.FormatNoCaller))
+
+	err := withTracedError("json logger", 1)
+	require.Error(t, err)
+
+	foo := struct {
+		A string
+		b string
+		C int
+	}{A: "A", b: "b", C: 1234567}
+
+	logger.KV(xlog.ERROR, "err", err, "number", 1, "obj", foo)
+	result := b.String()
+
+	assert.Contains(t, result, `{"err":"originateError: msg=json logger, level=0\ngithub.com/effective-security/xlog_test.originateError`)
+	assert.Contains(t, result, `"func":"Test_WithJSONError","level":"E","number":1,"obj":{"A":"A","C":1234567},"pkg":"xlog_test","src":"xlog_test.go:499","time":"2021-04-01T00:00:00Z"}`)
+}
+
 func Test_NilFormatter(t *testing.T) {
 	f := xlog.NewNilFormatter()
 	f.FormatKV("pkg", xlog.DEBUG, 1)
