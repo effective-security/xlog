@@ -72,12 +72,12 @@ func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, escape bool, k
 		kv["pkg"] = pkg
 	}
 
-	if c.withLocation || c.withCaller {
+	if l == ERROR || c.withLocation || c.withCaller {
 		caller, file, line := Caller(depth + 1)
-		if c.withLocation {
+		if l == ERROR || c.withLocation {
 			kv["src"] = fmt.Sprintf("%s:%d", file, line)
 		}
-		if c.withCaller {
+		if l == ERROR || c.withCaller {
 			kv["func"] = caller
 		}
 	}
@@ -110,6 +110,10 @@ func kvToMap(kvList ...interface{}) map[string]interface{} {
 		var v interface{}
 		if i+1 < size {
 			v = kvList[i+1]
+		}
+		switch typ := v.(type) {
+		case error:
+			v = fmt.Sprintf("%+v", typ)
 		}
 		m[k] = v
 	}
