@@ -91,6 +91,10 @@ func (c *formatter) Format(pkg string, l xlog.LogLevel, depth int, entries ...in
 	fn, file, line := callerName(depth + 1)
 
 	str := fmt.Sprint(entries...)
+	if len(str) > 512 {
+		str = str[:512] + "..."
+	}
+
 	if c.config.withCaller {
 		str = "src=" + fn + ", " + str
 	}
