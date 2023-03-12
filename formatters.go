@@ -341,6 +341,9 @@ func flatten(printEmpty bool, kvList ...interface{}) []interface{} {
 		}
 		val := EscapedString(v)
 		if val != `""` || printEmpty {
+			if len(val) > 256 {
+				val = val[:256] + "..."
+			}
 			list = append(list, k+"="+val)
 			j++
 		}

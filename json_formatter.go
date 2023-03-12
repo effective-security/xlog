@@ -83,7 +83,11 @@ func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, escape bool, k
 	}
 
 	if len(entries) > 0 {
-		kv["msg"] = fmt.Sprint(entries...)
+		msg := fmt.Sprint(entries...)
+		if len(msg) > 512 {
+			msg = msg[:512] + "..."
+		}
+		kv["msg"] = msg
 	}
 
 	encoder := json.NewEncoder(c.w)
