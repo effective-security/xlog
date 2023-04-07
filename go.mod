@@ -1,13 +1,12 @@
 module github.com/effective-security/xlog
 
-go 1.19
+go 1.20
 
 require (
 	github.com/go-phorce/cov-report v1.1.1-0.20200622030546-3fb510c4b1ba
 	github.com/mattn/goveralls v0.0.11
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.0
-	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616
 	golang.org/x/tools v0.1.8
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
