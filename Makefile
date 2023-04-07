@@ -22,8 +22,9 @@ clean:
 tools:
 	go install golang.org/x/tools/cmd/stringer
 	go install github.com/go-phorce/cov-report/cmd/cov-report
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.50.1
 	go install github.com/mattn/goveralls
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.2
+	go install github.com/go-delve/delve/cmd/dlv@v1.20.1
 
 build:
 	echo "nothing to build yet"
