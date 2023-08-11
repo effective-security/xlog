@@ -20,6 +20,7 @@ package xlog
 import (
 	"io"
 	"os"
+	"strings"
 )
 
 // Here's where the opinionation comes in. We need some sensible defaults,
@@ -32,9 +33,22 @@ import (
 func init() {
 	initHijack()
 
-	// Go `log` pacakge uses os.Stderr.
-	SetFormatter(NewDefaultFormatter(os.Stderr))
-	SetGlobalLogLevel(INFO)
+	level := os.Getenv("XLOG_LEVEL")
+	if level != "" {
+		l, err := ParseLevel(strings.ToUpper(level))
+		if err == nil {
+			SetGlobalLogLevel(l)
+		}
+	}
+	formatter := os.Getenv("XLOG_FORMATTER")
+	switch strings.ToUpper(formatter) {
+	case "DEFAULT":
+		SetFormatter(NewDefaultFormatter(os.Stderr))
+	case "PRETTY":
+		SetFormatter(NewPrettyFormatter(os.Stderr))
+	case "NIL":
+		SetFormatter(NewNilFormatter())
+	}
 }
 
 // NewDefaultFormatter returns an instance of default formatter
