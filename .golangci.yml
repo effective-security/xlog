@@ -3,7 +3,13 @@ run:
 
 linters:
   enable:
-    - revive
+    #- revive
+    - goconst
+    - goimports
+    - stylecheck
+    #- unparam
+    - staticcheck
+    - unused
 
 issues:
   exclude:
