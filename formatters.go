@@ -413,21 +413,29 @@ func Caller(depth int) (name string, file string, line int) {
 	details := runtime.FuncForPC(pc)
 	if ok && details != nil {
 		name := path.Base(details.Name())
+		name = removePart(name, "[", "]")
+		name = removePart(name, "(", ")")
 
 		// remove package name
 		idx := strings.Index(name, ".")
 		if idx >= 0 {
-			name = name[idx+1:]
-			if name[0] == '(' {
-				idx = strings.Index(name, ".")
-				if idx >= 0 {
-					name = name[idx+1:]
-				}
-			}
+			name = strings.TrimLeft(name[idx+1:], ".")
 		}
 		return name, file, line
 	}
 	return "func", file, line
+}
+
+func removePart(val, open, close string) string {
+	b, a, ok := strings.Cut(val, open)
+	if !ok {
+		return val
+	}
+	_, c, ok := strings.Cut(a, close)
+	if !ok {
+		return b
+	}
+	return b + c
 }
 
 type config struct {
