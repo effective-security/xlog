@@ -582,6 +582,23 @@ func TestErrorsStats(t *testing.T) {
 	assert.Equal(t, 1, errsCount)
 }
 
+type bogus[T string | int] struct{}
+
+func (bogus[T]) genericFunc(p T, level int) string {
+	n, _, _ := xlog.Caller(level)
+	return n
+}
+
+func TestCaller(t *testing.T) {
+
+	b := bogus[string]{}
+	f := func(level int) string {
+		return b.genericFunc("bogus", level)
+	}
+	assert.Equal(t, "bogus.genericFunc", f(1))
+	assert.Equal(t, "bogus.genericFunc", b.genericFunc("bogus", 1))
+}
+
 func f1(stack bool) error {
 	err := f2(stack)
 	if stack {
