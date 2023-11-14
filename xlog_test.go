@@ -397,17 +397,21 @@ func Test_StringFormatter(t *testing.T) {
 	date, err := time.Parse("2006-01-02", "2021-04-01")
 	require.NoError(t, err)
 
+	var updatedAt *time.Time
+
 	log2.KV(xlog.INFO,
 		"int", 1, // int
 		"nint", -2, // negative int
 		"uint64", uint64(123456789123456), // int
 		"bool", false,
 		"time", date, // time.Time
+		"updated", updatedAt, // *time.Time
+		"period", 2*time.Second, // time.Duration
 		"strings", []string{"s1", "s2"},
 		"err", withAnnotateError("logs error", 2),
 	)
 	result = b.String()
-	expected = "time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 bool=false time=\"2021-04-01T00:00:00Z\" strings=[\"s1\",\"s2\"] err=\"originateError: msg=logs error, level=0\\n"
+	expected = "time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 bool=false time=2021-04-01T00:00:00Z updated=nil period=2s strings=[\"s1\",\"s2\"] err=\"originateError: msg=logs error, level=0\\n"
 	assert.Contains(t, result, expected)
 	b.Reset()
 }
@@ -500,7 +504,7 @@ func Test_WithJSONError(t *testing.T) {
 	result := b.String()
 
 	assert.Contains(t, result, `{"err":"originateError: msg=json logger, level=0\ngithub.com/effective-security/xlog_test.originateError`)
-	assert.Contains(t, result, `"func":"Test_WithJSONError","level":"E","number":1,"obj":{"A":"A","C":1234567},"pkg":"xlog_test","src":"xlog_test.go:499","time":"2021-04-01T00:00:00Z"}`)
+	assert.Contains(t, result, `"func":"Test_WithJSONError","level":"E","number":1,"obj":{"A":"A","C":1234567},"pkg":"xlog_test","src":"xlog_test.go:503","time":"2021-04-01T00:00:00Z"}`)
 }
 
 func Test_NilFormatter(t *testing.T) {
@@ -513,20 +517,24 @@ func Test_NilFormatter(t *testing.T) {
 func TestEscapedString(t *testing.T) {
 
 	stru := struct {
-		Foo string
-		B   bool
-		I   int
+		Foo   string
+		B     bool
+		I     int
+		DNull *time.Time
 	}{Foo: "foo", B: true, I: -1}
 
 	date, err := time.Parse("2006-01-02", "2021-04-01")
 	require.NoError(t, err)
 
 	structVal := struct {
-		S string
-		N int
-		D time.Time
+		S      string
+		N      int
+		D      time.Time
+		DPtr   *time.Time
+		DNull  *time.Time
+		Period time.Duration
 	}{
-		"str", 1, date,
+		"str", 1, date, &date, nil, time.Duration(time.Minute * 5),
 	}
 
 	errToTest := errors.New("issue: some error")
@@ -545,9 +553,11 @@ func TestEscapedString(t *testing.T) {
 		{"bool", false, "false"},
 		{"true", true, "true"},
 		{"strings", []string{"s1", "s2"}, `["s1","s2"]`},
-		{"date", date, `"2021-04-01T00:00:00Z"`},
-		{"struct", structVal, `{"S":"str","N":1,"D":"2021-04-01T00:00:00Z"}`},
-		{"foo", stru, `{"Foo":"foo","B":true,"I":-1}`},
+		{"date", date, `2021-04-01T00:00:00Z`},
+		{"date_ptr", &date, `2021-04-01T00:00:00Z`},
+		{"duration", 5 * time.Second, `5s`},
+		{"struct", structVal, `{"S":"str","N":1,"D":"2021-04-01T00:00:00Z","DPtr":"2021-04-01T00:00:00Z","DNull":null,"Period":300000000000}`},
+		{"foo", stru, `{"Foo":"foo","B":true,"I":-1,"DNull":null}`},
 		{"foo", reflect.TypeOf(errToTest), `"*errors.fundamental"`},
 		{"str", "str", `"str"`},
 		{"whitespace", "\t\nstr\n", `"str"`},
