@@ -356,6 +356,8 @@ func EscapedString(value interface{}) string {
 	switch typ := value.(type) {
 	case error:
 		value = fmt.Sprintf("%+v", typ)
+	case time.Duration:
+		return typ.String()
 	case string:
 		value = strings.TrimSpace(typ)
 		// pass through for encoding
@@ -377,7 +379,12 @@ func EscapedString(value interface{}) string {
 	case reflect.Type:
 		value = typ.String()
 	case time.Time:
-		value = typ.Format(time.RFC3339)
+		return typ.UTC().Format(time.RFC3339)
+	case *time.Time:
+		if typ == nil {
+			return "nil"
+		}
+		return typ.UTC().Format(time.RFC3339)
 		// pass through for encoding
 	case fmt.Stringer:
 		value = strings.TrimSpace(typ.String())
