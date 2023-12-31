@@ -3,6 +3,7 @@ package stackdriver
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -23,8 +24,23 @@ func Test_FormatterOptions(t *testing.T) {
 
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "nil", nil, "empty", "")
 	result := b.String()
-	assert.Equal(t, `{"logName":"sd","component":"stackdriver","jsonPayload":{"empty":"","k1":1,"k2":false,"nil":null},"severity":"INFO","sourceLocation":{"file":"sd_test.go","line":24,"function":"Test_FormatterOptions"}}`+"\n", result)
+	assert.Equal(t, `{"logName":"sd","component":"stackdriver","jsonPayload":{"empty":"","k1":1,"k2":false,"nil":null},"severity":"INFO","sourceLocation":{"file":"sd_test.go","line":25,"function":"Test_FormatterOptions"}}`+"\n", result)
 	b.Reset()
+
+	xlog.SetFormatter(NewFormatter(writer, "sd").
+		Options(xlog.FormatNoCaller, xlog.FormatWithLocation, xlog.FormatSkipTime, xlog.FormatPrintEmpty))
+
+	logger.KV(xlog.INFO, "k1", 1, "k2", false, "nil", nil, "empty", "")
+	result = b.String()
+	assert.Equal(t, `{"logName":"sd","component":"stackdriver","jsonPayload":{"empty":"","k1":1,"k2":false,"nil":null},"severity":"INFO","sourceLocation":{"function":"Test_FormatterOptions"}}`+"\n", result)
+
+	assert.Panics(t, func() {
+		logger.KV(xlog.INFO, 1, 2)
+	})
+	assert.Panics(t, func() {
+		logger.KV(xlog.INFO, errors.New("not a string"))
+	})
+
 }
 
 func Test_Formatter(t *testing.T) {
@@ -57,7 +73,7 @@ func Test_Formatter(t *testing.T) {
 
 	logger.KV(xlog.ERROR, "err", fmt.Errorf("log error"))
 	result = b.String()
-	assert.Equal(t, `{"logName":"sd","component":"stackdriver","timestamp":"2019-01-01T00:00:00Z","jsonPayload":{"err":{}},"severity":"ERROR","sourceLocation":{"file":"sd_test.go","line":58,"function":"Test_Formatter"}}`+"\n", result)
+	assert.Equal(t, `{"logName":"sd","component":"stackdriver","timestamp":"2019-01-01T00:00:00Z","jsonPayload":{"err":{}},"severity":"ERROR","sourceLocation":{"file":"sd_test.go","line":74,"function":"Test_Formatter"}}`+"\n", result)
 	b.Reset()
 }
 
