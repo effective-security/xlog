@@ -30,6 +30,8 @@ import (
 
 type severity string
 
+var TimeNowFn = time.Now
+
 const (
 	severityDebug    severity = "DEBUG"
 	severityInfo     severity = "INFO"
@@ -78,44 +80,52 @@ func (c *formatter) Options(ops ...xlog.FormatterOption) xlog.Formatter {
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
 func (c *formatter) FormatKV(pkg string, level xlog.LogLevel, depth int, entries ...interface{}) {
-	c.Format(pkg, level, depth+1, flatten(c.printEmpty, entries...))
+	c.format(pkg, level, depth+1, flatten(c.printEmpty, entries...))
 }
 
 // Format log entry string to the stream
 func (c *formatter) Format(pkg string, l xlog.LogLevel, depth int, entries ...interface{}) {
+	c.format(pkg, l, depth+1, nil, entries...)
+}
+
+func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj map[string]any, entries ...interface{}) {
 	severity := levelsToSeverity[l]
 	if severity == "" {
 		severity = severityInfo
 	}
 
+	if obj == nil {
+		obj = map[string]any{}
+	}
+
+	if len(entries) > 0 {
+		str := fmt.Sprint(entries...)
+		if len(str) > 1024 {
+			str = str[:1024] + "..."
+		}
+		obj["msg"] = str
+	}
+
 	fn, file, line := callerName(depth + 1)
-
-	str := fmt.Sprint(entries...)
-	if len(str) > 1024 {
-		str = str[:1024] + "..."
-	}
-
-	if c.config.withCaller {
-		str = "src=" + fn + ", " + str
-	}
-
 	ee := entry{
-		LogName:   c.logName,
-		Component: pkg,
-		Message:   str,
-		Severity:  severity,
+		LogName:     c.logName,
+		Component:   pkg,
+		Severity:    severity,
+		JSONPayload: obj,
 		Source: &reportLocation{
 			Function: fn,
 		},
 	}
 
 	if !c.config.skipTime {
-		ee.Time = time.Now().UTC().Format(time.RFC3339)
+		ee.Time = TimeNowFn().UTC().Format(time.RFC3339)
 	}
 
-	if c.debug || l <= xlog.ERROR {
-		ee.Source.FilePath = path.Base(file)
-		ee.Source.LineNumber = line
+	if c.config.withCaller {
+		if c.debug || l <= xlog.ERROR {
+			ee.Source.FilePath = path.Base(file)
+			ee.Source.LineNumber = line
+		}
 	}
 
 	b, err := json.Marshal(ee)
@@ -133,12 +143,12 @@ func (c *formatter) Flush() {
 }
 
 type entry struct {
-	LogName   string          `json:"logName,omitempty"`
-	Component string          `json:"component,omitempty"`
-	Time      string          `json:"timestamp,omitempty"`
-	Message   string          `json:"textPayload,omitempty"`
-	Severity  severity        `json:"severity,omitempty"`
-	Source    *reportLocation `json:"sourceLocation,omitempty"`
+	LogName     string          `json:"logName,omitempty"`
+	Component   string          `json:"component,omitempty"`
+	Time        string          `json:"timestamp,omitempty"`
+	JSONPayload any             `json:"jsonPayload,omitempty"`
+	Severity    severity        `json:"severity,omitempty"`
+	Source      *reportLocation `json:"sourceLocation,omitempty"`
 }
 
 type reportLocation struct {
@@ -147,10 +157,9 @@ type reportLocation struct {
 	Function   string `json:"function,omitempty"`
 }
 
-func flatten(printEmpty bool, kvList ...interface{}) string {
+func flatten(printEmpty bool, kvList ...interface{}) map[string]any {
 	size := len(kvList)
-	buf := bytes.Buffer{}
-	dirty := false
+	res := make(map[string]any, size/2)
 	for i := 0; i < size; i += 2 {
 		k, ok := kvList[i].(string)
 		if !ok {
@@ -163,22 +172,10 @@ func flatten(printEmpty bool, kvList ...interface{}) string {
 		if v == nil && !printEmpty {
 			continue
 		}
+		res[k] = v
 
-		val := String(v)
-		if (val == "" || val == `""`) && !printEmpty {
-			continue
-		}
-
-		if dirty {
-			buf.WriteRune(',')
-			buf.WriteRune(' ')
-		}
-		buf.WriteString(k)
-		buf.WriteString("=")
-		buf.WriteString(val)
-		dirty = true
 	}
-	return buf.String()
+	return res
 }
 
 // String returns string value stuitable for logging
