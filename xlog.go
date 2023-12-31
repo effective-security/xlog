@@ -28,41 +28,41 @@ type Logger interface {
 // KeyValueLogger interface for generic logger
 type KeyValueLogger interface {
 	// KV logs entries in "key1=value1, ..., keyN=valueN" format
-	KV(level LogLevel, entries ...interface{})
+	KV(level LogLevel, entries ...any)
 
 	// ContextKV logs entries in "key1=value1, ..., keyN=valueN" format,
 	// and add log entries from ctx as well.
 	// ContextWithKV method can be used to add extra values to context
-	ContextKV(ctx context.Context, level LogLevel, entries ...interface{})
+	ContextKV(ctx context.Context, level LogLevel, entries ...any)
 
 	// WithValues adds some key-value pairs of context to a logger.
 	// See Info for documentation on how key/value pairs work.
-	WithValues(keysAndValues ...interface{}) KeyValueLogger
+	WithValues(keysAndValues ...any) KeyValueLogger
 }
 
 // StdLogger interface for generic logger
 type StdLogger interface {
-	Fatal(args ...interface{})
-	Fatalf(format string, args ...interface{})
+	Fatal(args ...any)
+	Fatalf(format string, args ...any)
 
-	Panic(args ...interface{})
-	Panicf(format string, args ...interface{})
+	Panic(args ...any)
+	Panicf(format string, args ...any)
 
-	Info(entries ...interface{})
-	Infof(format string, args ...interface{})
+	Info(entries ...any)
+	Infof(format string, args ...any)
 
-	Error(entries ...interface{})
-	Errorf(format string, args ...interface{})
+	Error(entries ...any)
+	Errorf(format string, args ...any)
 
-	Warning(entries ...interface{})
-	Warningf(format string, args ...interface{})
+	Warning(entries ...any)
+	Warningf(format string, args ...any)
 
-	Notice(entries ...interface{})
-	Noticef(format string, args ...interface{})
+	Notice(entries ...any)
+	Noticef(format string, args ...any)
 
-	Debug(entries ...interface{})
-	Debugf(format string, args ...interface{})
+	Debug(entries ...any)
+	Debugf(format string, args ...any)
 
-	Trace(entries ...interface{})
-	Tracef(format string, args ...interface{})
+	Trace(entries ...any)
+	Tracef(format string, args ...any)
 }

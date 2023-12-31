@@ -10,12 +10,12 @@ const (
 
 // contextLogs represents extra data in the Context that will be added to logs, in key=value format
 type contextLogs struct {
-	entries []interface{}
+	entries []any
 }
 
 // ContextWithKV returns context with values to be added to logs,
 // entries in "key1=value1, ..., keyN=valueN" format.
-func ContextWithKV(ctx context.Context, entries ...interface{}) context.Context {
+func ContextWithKV(ctx context.Context, entries ...any) context.Context {
 	v := ctx.Value(keyContext)
 	if v == nil {
 		rctx := &contextLogs{
@@ -30,7 +30,7 @@ func ContextWithKV(ctx context.Context, entries ...interface{}) context.Context 
 }
 
 // ContextEntries returns log entries
-func ContextEntries(ctx context.Context) []interface{} {
+func ContextEntries(ctx context.Context) []any {
 	v := ctx.Value(keyContext)
 	if v == nil {
 		return nil

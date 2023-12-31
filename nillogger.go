@@ -29,70 +29,70 @@ func NewNilLogger() Logger {
 }
 
 // Fatal does nothing
-func (l *NilLogger) Fatal(args ...interface{}) {}
+func (l *NilLogger) Fatal(args ...any) {}
 
 // Fatalf does nothing
-func (l *NilLogger) Fatalf(format string, args ...interface{}) {}
+func (l *NilLogger) Fatalf(format string, args ...any) {}
 
 // Fatalln does nothing
-func (l *NilLogger) Fatalln(args ...interface{}) {}
+func (l *NilLogger) Fatalln(args ...any) {}
 
 // Panic does nothing
-func (l *NilLogger) Panic(args ...interface{}) {
+func (l *NilLogger) Panic(args ...any) {
 	log.Panic(args...)
 }
 
 // Panicf does nothing
-func (l *NilLogger) Panicf(format string, args ...interface{}) {
+func (l *NilLogger) Panicf(format string, args ...any) {
 	log.Panicf(format, args...)
 }
 
 // Info does nothing
-func (l *NilLogger) Info(entries ...interface{}) {}
+func (l *NilLogger) Info(entries ...any) {}
 
 // Infof does nothing
-func (l *NilLogger) Infof(format string, args ...interface{}) {}
+func (l *NilLogger) Infof(format string, args ...any) {}
 
 // KV does nothing
-func (l *NilLogger) KV(_ LogLevel, entries ...interface{}) {}
+func (l *NilLogger) KV(_ LogLevel, entries ...any) {}
 
 // ContextKV logs entries in "key1=value1, ..., keyN=valueN" format,
 // and add log entries from ctx as well.
 // ContextWithKV method can be used to add extra values to context
-func (l *NilLogger) ContextKV(_ context.Context, _ LogLevel, _ ...interface{}) {}
+func (l *NilLogger) ContextKV(_ context.Context, _ LogLevel, _ ...any) {}
 
 // Error does nothing
-func (l *NilLogger) Error(entries ...interface{}) {}
+func (l *NilLogger) Error(entries ...any) {}
 
 // Errorf does nothing
-func (l *NilLogger) Errorf(format string, args ...interface{}) {}
+func (l *NilLogger) Errorf(format string, args ...any) {}
 
 // Warning does nothing
-func (l *NilLogger) Warning(entries ...interface{}) {}
+func (l *NilLogger) Warning(entries ...any) {}
 
 // Warningf does nothing
-func (l *NilLogger) Warningf(format string, args ...interface{}) {}
+func (l *NilLogger) Warningf(format string, args ...any) {}
 
 // Notice does nothing
-func (l *NilLogger) Notice(entries ...interface{}) {}
+func (l *NilLogger) Notice(entries ...any) {}
 
 // Noticef does nothing
-func (l *NilLogger) Noticef(format string, args ...interface{}) {}
+func (l *NilLogger) Noticef(format string, args ...any) {}
 
 // Debug does nothing
-func (l *NilLogger) Debug(entries ...interface{}) {}
+func (l *NilLogger) Debug(entries ...any) {}
 
 // Debugf does nothing
-func (l *NilLogger) Debugf(format string, args ...interface{}) {}
+func (l *NilLogger) Debugf(format string, args ...any) {}
 
 // Trace does nothing
-func (l *NilLogger) Trace(entries ...interface{}) {}
+func (l *NilLogger) Trace(entries ...any) {}
 
 // Tracef does nothing
-func (l *NilLogger) Tracef(format string, args ...interface{}) {}
+func (l *NilLogger) Tracef(format string, args ...any) {}
 
 // WithValues adds some key-value pairs of context to a logger.
 // See Info for documentation on how key/value pairs work.
-func (l *NilLogger) WithValues(keysAndValues ...interface{}) KeyValueLogger {
+func (l *NilLogger) WithValues(keysAndValues ...any) KeyValueLogger {
 	return l
 }

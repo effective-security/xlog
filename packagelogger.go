@@ -27,7 +27,7 @@ var ExitFunc = os.Exit
 type PackageLogger struct {
 	pkg    string
 	level  LogLevel
-	values []interface{}
+	values []any
 }
 
 const calldepth = 2
@@ -41,7 +41,7 @@ const (
 
 // WithValues adds some key-value pairs of context to a logger.
 // See Info for documentation on how key/value pairs work.
-func (p *PackageLogger) WithValues(keysAndValues ...interface{}) KeyValueLogger {
+func (p *PackageLogger) WithValues(keysAndValues ...any) KeyValueLogger {
 	return &PackageLogger{
 		pkg:    p.pkg,
 		level:  p.level,
@@ -49,7 +49,7 @@ func (p *PackageLogger) WithValues(keysAndValues ...interface{}) KeyValueLogger 
 	}
 }
 
-func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, entries ...interface{}) {
+func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, entries ...any) {
 	logger.Lock()
 	defer logger.Unlock()
 
@@ -72,7 +72,7 @@ func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, 
 	}
 }
 
-func (p *PackageLogger) internalLogf(depth int, inLevel LogLevel, format string, args ...interface{}) {
+func (p *PackageLogger) internalLogf(depth int, inLevel LogLevel, format string, args ...any) {
 	logger.Lock()
 	defer logger.Unlock()
 
@@ -84,7 +84,7 @@ func (p *PackageLogger) internalLogf(depth int, inLevel LogLevel, format string,
 		return
 	}
 	if logger.formatter != nil {
-		entries := []interface{}{fmt.Sprintf(format, args...)}
+		entries := []any{fmt.Sprintf(format, args...)}
 		if len(p.values) > 0 {
 			entries = append(flatten(false, p.values...), entries)
 		}
@@ -101,39 +101,39 @@ func (p *PackageLogger) LevelAt(l LogLevel) bool {
 }
 
 // Logf a formatted string at any level between ERROR and TRACE
-func (p *PackageLogger) Logf(l LogLevel, format string, args ...interface{}) {
+func (p *PackageLogger) Logf(l LogLevel, format string, args ...any) {
 	p.internalLogf(calldepth, l, format, args...)
 }
 
 // Log a message at any level between ERROR and TRACE
-func (p *PackageLogger) Log(l LogLevel, args ...interface{}) {
+func (p *PackageLogger) Log(l LogLevel, args ...any) {
 	p.internalLog(plain, calldepth, l, args...)
 }
 
 // Panic and fatal
 
 // Panicf is implementation for stdlib compatibility
-func (p *PackageLogger) Panicf(format string, args ...interface{}) {
+func (p *PackageLogger) Panicf(format string, args ...any) {
 	s := fmt.Sprintf(format, args...)
 	p.internalLog(plain, calldepth, CRITICAL, s)
 	panic(s)
 }
 
 // Panic is implementation for stdlib compatibility
-func (p *PackageLogger) Panic(args ...interface{}) {
+func (p *PackageLogger) Panic(args ...any) {
 	s := fmt.Sprint(args...)
 	p.internalLog(plain, calldepth, CRITICAL, s)
 	panic(s)
 }
 
 // Fatalf is implementation for stdlib compatibility
-func (p *PackageLogger) Fatalf(format string, args ...interface{}) {
+func (p *PackageLogger) Fatalf(format string, args ...any) {
 	p.internalLogf(calldepth, CRITICAL, format, args...)
 	ExitFunc(1)
 }
 
 // Fatal is implementation for stdlib compatibility
-func (p *PackageLogger) Fatal(args ...interface{}) {
+func (p *PackageLogger) Fatal(args ...any) {
 	s := fmt.Sprint(args...)
 	p.internalLog(plain, calldepth, CRITICAL, s)
 	ExitFunc(1)
@@ -142,60 +142,60 @@ func (p *PackageLogger) Fatal(args ...interface{}) {
 // Error Functions
 
 // Errorf is implementation for stdlib compatibility
-func (p *PackageLogger) Errorf(format string, args ...interface{}) {
+func (p *PackageLogger) Errorf(format string, args ...any) {
 	p.internalLogf(calldepth, ERROR, format, args...)
 }
 
 // Error is implementation for stdlib compatibility
-func (p *PackageLogger) Error(entries ...interface{}) {
+func (p *PackageLogger) Error(entries ...any) {
 	p.internalLog(plain, calldepth, ERROR, entries...)
 }
 
 // Warning Functions
 
 // Warningf is implementation for stdlib compatibility
-func (p *PackageLogger) Warningf(format string, args ...interface{}) {
+func (p *PackageLogger) Warningf(format string, args ...any) {
 	p.internalLogf(calldepth, WARNING, format, args...)
 }
 
 // Warning is implementation for stdlib compatibility
-func (p *PackageLogger) Warning(entries ...interface{}) {
+func (p *PackageLogger) Warning(entries ...any) {
 	p.internalLog(plain, calldepth, WARNING, entries...)
 }
 
 // Notice Functions
 
 // Noticef is implementation for stdlib compatibility
-func (p *PackageLogger) Noticef(format string, args ...interface{}) {
+func (p *PackageLogger) Noticef(format string, args ...any) {
 	p.internalLogf(calldepth, NOTICE, format, args...)
 }
 
 // Notice is implementation for stdlib compatibility
-func (p *PackageLogger) Notice(entries ...interface{}) {
+func (p *PackageLogger) Notice(entries ...any) {
 	p.internalLog(plain, calldepth, NOTICE, entries...)
 }
 
 // Info Functions
 
 // Infof is implementation for stdlib compatibility
-func (p *PackageLogger) Infof(format string, args ...interface{}) {
+func (p *PackageLogger) Infof(format string, args ...any) {
 	p.internalLogf(calldepth, INFO, format, args...)
 }
 
 // Info is implementation for stdlib compatibility
-func (p *PackageLogger) Info(entries ...interface{}) {
+func (p *PackageLogger) Info(entries ...any) {
 	p.internalLog(plain, calldepth, INFO, entries...)
 }
 
 // KV prints key=value pairs
-func (p *PackageLogger) KV(l LogLevel, entries ...interface{}) {
+func (p *PackageLogger) KV(l LogLevel, entries ...any) {
 	p.internalLog(kv, calldepth, l, entries...)
 }
 
 // ContextKV logs entries in "key1=value1, ..., keyN=valueN" format,
 // and add log entries from ctx as well.
 // ContextWithKV method can be used to add extra values to context
-func (p *PackageLogger) ContextKV(ctx context.Context, l LogLevel, entries ...interface{}) {
+func (p *PackageLogger) ContextKV(ctx context.Context, l LogLevel, entries ...any) {
 	extra := ContextEntries(ctx)
 	if len(extra) > 0 {
 		entries = append(extra, entries...)
@@ -206,24 +206,24 @@ func (p *PackageLogger) ContextKV(ctx context.Context, l LogLevel, entries ...in
 // Debug Functions
 
 // Debugf is implementation for stdlib compatibility
-func (p *PackageLogger) Debugf(format string, args ...interface{}) {
+func (p *PackageLogger) Debugf(format string, args ...any) {
 	p.internalLogf(calldepth, DEBUG, format, args...)
 }
 
 // Debug is implementation for stdlib compatibility
-func (p *PackageLogger) Debug(entries ...interface{}) {
+func (p *PackageLogger) Debug(entries ...any) {
 	p.internalLog(plain, calldepth, DEBUG, entries...)
 }
 
 // Trace Functions
 
 // Tracef is implementation for stdlib compatibility
-func (p *PackageLogger) Tracef(format string, args ...interface{}) {
+func (p *PackageLogger) Tracef(format string, args ...any) {
 	p.internalLogf(calldepth, TRACE, format, args...)
 }
 
 // Trace is implementation for stdlib compatibility
-func (p *PackageLogger) Trace(entries ...interface{}) {
+func (p *PackageLogger) Trace(entries ...any) {
 	p.internalLog(plain, calldepth, TRACE, entries...)
 }
 
