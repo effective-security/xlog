@@ -411,7 +411,7 @@ func Test_StringFormatter(t *testing.T) {
 		"err", withAnnotateError("logs error", 2),
 	)
 	result = b.String()
-	expected = "time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 bool=false time=2021-04-01T00:00:00Z updated=nil period=2s strings=[\"s1\",\"s2\"] err=\"originateError: msg=logs error, level=0\\n"
+	expected = `time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 bool=false time=2021-04-01T00:00:00Z updated=null period=2s strings=["s1","s2"] err="originateError: msg=logs error, level=0`
 	assert.Contains(t, result, expected)
 	b.Reset()
 }
@@ -541,7 +541,7 @@ func TestEscapedString(t *testing.T) {
 
 	tcases := []struct {
 		name string
-		val  interface{}
+		val  any
 		exp  string
 	}{
 		{"int", 1, "1"},

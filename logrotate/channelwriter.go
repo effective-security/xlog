@@ -49,7 +49,7 @@ func NewChannelWriter(dest io.Writer, bufferDepth int, flushInterval time.Durati
 		stopped: make(chan bool),
 		running: 1,
 	}
-	cw.buffPool.New = func() interface{} {
+	cw.buffPool.New = func() any {
 		return make([]byte, 0, 256)
 	}
 	go cw.listen(dest, flushInterval)

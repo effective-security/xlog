@@ -30,8 +30,6 @@ import (
 
 type severity string
 
-var TimeNowFn = time.Now
-
 const (
 	severityDebug    severity = "DEBUG"
 	severityInfo     severity = "INFO"
@@ -79,23 +77,29 @@ func (c *formatter) Options(ops ...xlog.FormatterOption) xlog.Formatter {
 
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
-func (c *formatter) FormatKV(pkg string, level xlog.LogLevel, depth int, entries ...interface{}) {
-	c.format(pkg, level, depth+1, flatten(c.printEmpty, entries...))
+func (c *formatter) FormatKV(pkg string, level xlog.LogLevel, depth int, entries ...any) {
+	obj := &kventries{
+		printEmpty: c.printEmpty,
+		entries:    entries,
+	}
+	c.format(pkg, level, depth+1, obj)
 }
 
 // Format log entry string to the stream
-func (c *formatter) Format(pkg string, l xlog.LogLevel, depth int, entries ...interface{}) {
+func (c *formatter) Format(pkg string, l xlog.LogLevel, depth int, entries ...any) {
 	c.format(pkg, l, depth+1, nil, entries...)
 }
 
-func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj map[string]any, entries ...interface{}) {
+func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj *kventries, entries ...any) {
 	severity := levelsToSeverity[l]
 	if severity == "" {
 		severity = severityInfo
 	}
 
 	if obj == nil {
-		obj = map[string]any{}
+		obj = &kventries{
+			printEmpty: c.printEmpty,
+		}
 	}
 
 	if len(entries) > 0 {
@@ -103,7 +107,7 @@ func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj map[strin
 		if len(str) > 1024 {
 			str = str[:1024] + "..."
 		}
-		obj["msg"] = str
+		obj.entries = append(obj.entries, "msg", str)
 	}
 
 	fn, file, line := callerName(depth + 1)
@@ -118,7 +122,7 @@ func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj map[strin
 	}
 
 	if !c.config.skipTime {
-		ee.Time = TimeNowFn().UTC().Format(time.RFC3339)
+		ee.Time = xlog.TimeNowFn().UTC().Format(time.RFC3339)
 	}
 
 	if c.config.withCaller {
@@ -157,29 +161,8 @@ type reportLocation struct {
 	Function   string `json:"function,omitempty"`
 }
 
-func flatten(printEmpty bool, kvList ...interface{}) map[string]any {
-	size := len(kvList)
-	res := make(map[string]any, size/2)
-	for i := 0; i < size; i += 2 {
-		k, ok := kvList[i].(string)
-		if !ok {
-			panic(fmt.Sprintf("key is not a string: %s", String(kvList[i])))
-		}
-		var v interface{}
-		if i+1 < size {
-			v = kvList[i+1]
-		}
-		if v == nil && !printEmpty {
-			continue
-		}
-		res[k] = v
-
-	}
-	return res
-}
-
 // String returns string value stuitable for logging
-func String(value interface{}) string {
+func String(value any) string {
 	if err, ok := value.(error); ok {
 		// if error does not support json.Marshaler,
 		// the print the full details
@@ -247,4 +230,55 @@ func removePart(val, open, close string) string {
 		return b
 	}
 	return b + c
+}
+
+type kventries struct {
+	entries    []any
+	printEmpty bool
+}
+
+func (o *kventries) MarshalJSON() (out []byte, err error) {
+	if len(o.entries) == 0 {
+		return []byte(`{}`), nil
+	}
+
+	out = append(out, '{')
+
+	size := len(o.entries)
+	lastComma := false
+
+	for i := 0; i < size; i += 2 {
+		k, ok := o.entries[i].(string)
+		if !ok {
+			panic(fmt.Sprintf("key is not a string: %s", String(o.entries[i])))
+		}
+		var v any
+		if i+1 < size {
+			v = o.entries[i+1]
+		}
+		if v == nil && !o.printEmpty {
+			continue
+		}
+		if s, ok := v.(string); ok && s == "" && !o.printEmpty {
+			continue
+		}
+
+		key, err := json.Marshal(k)
+		if err != nil {
+			return nil, err
+		}
+		val := xlog.EscapedString(v)
+		out = append(out, key...)
+		out = append(out, ':')
+		out = append(out, val...)
+		out = append(out, ',')
+		lastComma = true
+	}
+	if lastComma {
+		// replace last ',' with '}'
+		out[len(out)-1] = '}'
+	} else {
+		out = append(out, '}')
+	}
+	return out, nil
 }

@@ -49,18 +49,18 @@ func (c *JSONFormatter) Options(ops ...FormatterOption) Formatter {
 
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
-func (c *JSONFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...interface{}) {
+func (c *JSONFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...any) {
 	m := kvToMap(entries...)
 	c.format(pkg, l, depth+1, false, m)
 }
 
 // Format log entry string to the stream
-func (c *JSONFormatter) Format(pkg string, l LogLevel, depth int, entries ...interface{}) {
-	c.format(pkg, l, depth+1, true, map[string]interface{}{}, entries...)
+func (c *JSONFormatter) Format(pkg string, l LogLevel, depth int, entries ...any) {
+	c.format(pkg, l, depth+1, true, map[string]any{}, entries...)
 }
 
 // Format log entry string to the stream
-func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, escape bool, kv map[string]interface{}, entries ...interface{}) {
+func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, escape bool, kv map[string]any, entries ...any) {
 	if !c.skipTime {
 		now := TimeNowFn().UTC()
 		kv["time"] = now.Format(time.RFC3339)
@@ -102,16 +102,16 @@ func (c *JSONFormatter) Flush() {
 	c.w.Flush()
 }
 
-func kvToMap(kvList ...interface{}) map[string]interface{} {
+func kvToMap(kvList ...any) map[string]any {
 	size := len(kvList)
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 
 	for i := 0; i < size; i += 2 {
 		k, ok := kvList[i].(string)
 		if !ok {
 			panic(fmt.Sprintf("key is not a string: %v", EscapedString(kvList[i])))
 		}
-		var v interface{}
+		var v any
 		if i+1 < size {
 			v = kvList[i+1]
 		}

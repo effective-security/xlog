@@ -53,10 +53,10 @@ const (
 type Formatter interface {
 	// Format log entry string to the stream,
 	// the entries are separated by space
-	Format(pkg string, level LogLevel, depth int, entries ...interface{})
+	Format(pkg string, level LogLevel, depth int, entries ...any)
 	// FormatKV log entry string to the stream,
 	// the entries are key/value pairs
-	FormatKV(pkg string, level LogLevel, depth int, entries ...interface{})
+	FormatKV(pkg string, level LogLevel, depth int, entries ...any)
 	// Flush the logs
 	Flush()
 	// Options allows to configure formatter behavior
@@ -91,16 +91,16 @@ func (s *StringFormatter) Options(ops ...FormatterOption) Formatter {
 
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
-func (s *StringFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...interface{}) {
+func (s *StringFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...any) {
 	s.format(pkg, l, depth+1, false, flatten(s.config.printEmpty, entries...)...)
 }
 
 // Format log entry string to the stream
-func (s *StringFormatter) Format(pkg string, l LogLevel, depth int, entries ...interface{}) {
+func (s *StringFormatter) Format(pkg string, l LogLevel, depth int, entries ...any) {
 	s.format(pkg, l, depth+1, true, entries...)
 }
 
-func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...interface{}) {
+func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...any) {
 	if !s.skipTime {
 		now := TimeNowFn().UTC()
 		_, _ = s.w.WriteString("time=")
@@ -137,7 +137,7 @@ type writeEntriesParams struct {
 	printEmpty   bool
 }
 
-func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...interface{}) {
+func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...any) {
 	if p.pkg != "" {
 		_, _ = w.WriteString("pkg=")
 		_, _ = w.WriteString(p.pkg)
@@ -219,17 +219,17 @@ func (c *PrettyFormatter) Options(ops ...FormatterOption) Formatter {
 
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
-func (c *PrettyFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...interface{}) {
+func (c *PrettyFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...any) {
 	c.format(pkg, l, depth+1, false, flatten(c.printEmpty, entries...)...)
 }
 
 // Format log entry string to the stream
-func (c *PrettyFormatter) Format(pkg string, l LogLevel, depth int, entries ...interface{}) {
+func (c *PrettyFormatter) Format(pkg string, l LogLevel, depth int, entries ...any) {
 	c.format(pkg, l, depth+1, true, entries...)
 }
 
 // Format log entry string to the stream
-func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...interface{}) {
+func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...any) {
 	if !c.skipTime {
 		now := TimeNowFn()
 		ts := now.Format("2006-01-02 15:04:05")
@@ -310,11 +310,11 @@ func (c *NilFormatter) Options(ops ...FormatterOption) Formatter {
 
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
-func (*NilFormatter) FormatKV(pkg string, level LogLevel, depth int, entries ...interface{}) {
+func (*NilFormatter) FormatKV(pkg string, level LogLevel, depth int, entries ...any) {
 }
 
 // Format does nothing.
-func (*NilFormatter) Format(_ string, _ LogLevel, _ int, _ ...interface{}) {
+func (*NilFormatter) Format(_ string, _ LogLevel, _ int, _ ...any) {
 	// noop
 }
 
@@ -323,16 +323,16 @@ func (*NilFormatter) Flush() {
 	// noop
 }
 
-func flatten(printEmpty bool, kvList ...interface{}) []interface{} {
+func flatten(printEmpty bool, kvList ...any) []any {
 	size := len(kvList)
-	list := make([]interface{}, 0, size/2)
+	list := make([]any, 0, size/2)
 
 	for i, j := 0, 0; i < size; i += 2 {
 		k, ok := kvList[i].(string)
 		if !ok {
 			panic(fmt.Sprintf("key is not a string: %v", EscapedString(kvList[i])))
 		}
-		var v interface{}
+		var v any
 		if i+1 < size {
 			v = kvList[i+1]
 		}
@@ -352,7 +352,7 @@ func flatten(printEmpty bool, kvList ...interface{}) []interface{} {
 }
 
 // EscapedString returns string value stuitable for logging
-func EscapedString(value interface{}) string {
+func EscapedString(value any) string {
 	switch typ := value.(type) {
 	case error:
 		value = fmt.Sprintf("%+v", typ)
@@ -382,7 +382,7 @@ func EscapedString(value interface{}) string {
 		return typ.UTC().Format(time.RFC3339)
 	case *time.Time:
 		if typ == nil {
-			return "nil"
+			return "null"
 		}
 		return typ.UTC().Format(time.RFC3339)
 		// pass through for encoding
