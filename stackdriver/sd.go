@@ -150,7 +150,7 @@ type entry struct {
 	LogName     string          `json:"logName,omitempty"`
 	Component   string          `json:"component,omitempty"`
 	Time        string          `json:"timestamp,omitempty"`
-	JSONPayload any             `json:"jsonPayload,omitempty"`
+	JSONPayload any             `json:"message,omitempty"`
 	Severity    severity        `json:"severity,omitempty"`
 	Source      *reportLocation `json:"sourceLocation,omitempty"`
 }
