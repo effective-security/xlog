@@ -358,6 +358,8 @@ func EscapedString(value any) string {
 		value = fmt.Sprintf("%+v", typ)
 	case time.Duration:
 		return typ.String()
+	case json.RawMessage:
+		return string(typ)
 	case string:
 		value = strings.TrimSpace(typ)
 		// pass through for encoding

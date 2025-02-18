@@ -16,6 +16,7 @@ package xlog_test
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	goerrors "errors"
 	"fmt"
 	"reflect"
@@ -504,7 +505,7 @@ func Test_WithJSONError(t *testing.T) {
 	result := b.String()
 
 	assert.Contains(t, result, `{"err":"originateError: msg=json logger, level=0\ngithub.com/effective-security/xlog_test.originateError`)
-	assert.Contains(t, result, `"func":"Test_WithJSONError","level":"E","number":1,"obj":{"A":"A","C":1234567},"pkg":"xlog_test","src":"xlog_test.go:503","time":"2021-04-01T00:00:00Z"}`)
+	assert.Contains(t, result, `"func":"Test_WithJSONError","level":"E","number":1,"obj":{"A":"A","C":1234567},"pkg":"xlog_test","src":"xlog_test.go:504","time":"2021-04-01T00:00:00Z"}`)
 }
 
 func Test_NilFormatter(t *testing.T) {
@@ -515,7 +516,6 @@ func Test_NilFormatter(t *testing.T) {
 }
 
 func TestEscapedString(t *testing.T) {
-
 	stru := struct {
 		Foo   string
 		B     bool
@@ -564,6 +564,7 @@ func TestEscapedString(t *testing.T) {
 		{"err", errToTest.Error(), `"issue: some error"`},
 		{"goerrors", goerrors.New("goerrors"), `"goerrors"`},
 		{"stringer", xlog.TRACE, `"TRACE"`},
+		{"json", json.RawMessage(`{"name":"Faina","age":12,"hobbies":["reading","traveling"]}`), `{"name":"Faina","age":12,"hobbies":["reading","traveling"]}`},
 	}
 
 	for _, tc := range tcases {
