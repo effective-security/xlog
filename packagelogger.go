@@ -51,45 +51,51 @@ func (p *PackageLogger) WithValues(keysAndValues ...any) KeyValueLogger {
 
 func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, entries ...any) {
 	logger.Lock()
-	defer logger.Unlock()
+	hook := logger.onError
+	formatter := logger.formatter
+	level := p.level
+	vs := p.values
+	logger.Unlock()
 
-	if inLevel == ERROR && logger.onError != nil {
-		logger.onError(p.pkg)
+	if inLevel == ERROR && hook != nil {
+		hook(p.pkg)
 	}
-
-	if inLevel != CRITICAL && p.level < inLevel {
+	if inLevel != CRITICAL && level < inLevel {
 		return
 	}
-	if len(p.values) > 0 {
-		entries = append(p.values, entries...)
+	if len(vs) > 0 {
+		entries = append(vs, entries...)
 	}
-	if logger.formatter != nil {
+	if formatter != nil {
 		if t == plain {
-			logger.formatter.Format(p.pkg, inLevel, depth+1, entries...)
+			formatter.Format(p.pkg, inLevel, depth+1, entries...)
 		} else {
-			logger.formatter.FormatKV(p.pkg, inLevel, depth+1, entries...)
+			formatter.FormatKV(p.pkg, inLevel, depth+1, entries...)
 		}
 	}
 }
 
 func (p *PackageLogger) internalLogf(depth int, inLevel LogLevel, format string, args ...any) {
 	logger.Lock()
-	defer logger.Unlock()
+	hook := logger.onError
+	formatter := logger.formatter
+	level := p.level
+	vs := p.values
+	logger.Unlock()
 
-	if inLevel == ERROR && logger.onError != nil {
-		logger.onError(p.pkg)
+	if inLevel == ERROR && hook != nil {
+		hook(p.pkg)
 	}
-
-	if inLevel != CRITICAL && p.level < inLevel {
+	if inLevel != CRITICAL && level < inLevel {
 		return
 	}
-	if logger.formatter != nil {
+	if formatter != nil {
 		entries := []any{fmt.Sprintf(format, args...)}
-		if len(p.values) > 0 {
-			entries = append(flatten(false, p.values...), entries)
+		if len(vs) > 0 {
+			entries = append(flatten(false, vs...), entries)
 		}
 
-		logger.formatter.Format(p.pkg, inLevel, depth+1, entries...)
+		formatter.Format(p.pkg, inLevel, depth+1, entries...)
 	}
 }
 
@@ -187,14 +193,17 @@ func (p *PackageLogger) Info(entries ...any) {
 	p.internalLog(plain, calldepth, INFO, entries...)
 }
 
-// KV prints key=value pairs
+// KV logs the provided key/value pairs at the given level.
+// The entries must come in pairs of key (string) and value;
+// an odd number of entries or a non-string key will cause a panic.
 func (p *PackageLogger) KV(l LogLevel, entries ...any) {
 	p.internalLog(kv, calldepth, l, entries...)
 }
 
-// ContextKV logs entries in "key1=value1, ..., keyN=valueN" format,
-// and add log entries from ctx as well.
-// ContextWithKV method can be used to add extra values to context
+// ContextKV logs the provided key/value pairs at the given level,
+// prefixed by any entries stored in the context via ContextWithKV.
+// The entries must come in pairs of key (string) and value;
+// an odd number of entries or a non-string key will cause a panic.
 func (p *PackageLogger) ContextKV(ctx context.Context, l LogLevel, entries ...any) {
 	extra := ContextEntries(ctx)
 	if len(extra) > 0 {

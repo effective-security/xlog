@@ -57,7 +57,8 @@ type formatter struct {
 	logName string
 }
 
-// NewFormatter returns an instance of StackdriverFormatter
+// NewFormatter returns a Stackdriver formatter for xlog, writing log entries
+// as Stackdriver-compatible JSON. logName sets the Stackdriver log name.
 func NewFormatter(w io.Writer, logName string) xlog.Formatter {
 	return &formatter{
 		w:       bufio.NewWriter(w),
@@ -161,7 +162,7 @@ type reportLocation struct {
 	Function   string `json:"function,omitempty"`
 }
 
-// String returns string value stuitable for logging
+// String returns a JSON-encoded, HTML-escaped string representation of the value.
 func String(value any) string {
 	if err, ok := value.(error); ok {
 		// if error does not support json.Marshaler,

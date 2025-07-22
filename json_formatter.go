@@ -22,9 +22,9 @@ import (
 	"time"
 )
 
-// NewJSONFormatter returns an instance of JsonFormatter
+// NewJSONFormatter returns a new JSONFormatter that outputs log entries in JSON format.
 func NewJSONFormatter(w io.Writer) Formatter {
-	return &JSONFormatter{
+	f := &JSONFormatter{
 		w: bufio.NewWriter(w),
 		config: config{
 			withCaller:   true,
@@ -33,12 +33,16 @@ func NewJSONFormatter(w io.Writer) Formatter {
 			color:        false,
 		},
 	}
+	f.encoder = json.NewEncoder(f.w)
+	f.encoder.SetEscapeHTML(false)
+	return f
 }
 
-// JSONFormatter provides default logs format
+// JSONFormatter formats log entries as JSON objects.
 type JSONFormatter struct {
 	config
-	w *bufio.Writer
+	w       *bufio.Writer
+	encoder *json.Encoder
 }
 
 // Options allows to configure formatter behavior
@@ -85,14 +89,12 @@ func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, escape bool, k
 	if len(entries) > 0 {
 		msg := fmt.Sprint(entries...)
 		if len(msg) > 1024 {
-			msg = msg[:1024] + "...\""
+			msg = msg[:1024]
 		}
 		kv["msg"] = msg
 	}
 
-	encoder := json.NewEncoder(c.w)
-	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(kv)
+	_ = c.encoder.Encode(kv)
 
 	c.Flush()
 }

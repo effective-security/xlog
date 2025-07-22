@@ -3,12 +3,12 @@ package stackdriver
 import (
 	"bufio"
 	"bytes"
-	"errors"
-	"fmt"
+	goerrors "errors"
 	"testing"
 	"time"
 
 	"github.com/effective-security/xlog"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -89,7 +89,7 @@ func Test_Formatter(t *testing.T) {
 	assert.Equal(t, `{"logName":"sd","component":"stackdriver","timestamp":"2019-01-01T00:00:00Z","message":{"k1":1,"k2":false,"k3":{"Foo":"bar"}},"severity":"INFO","sourceLocation":{"function":"Test_Formatter"}}`+"\n", result)
 	b.Reset()
 
-	logger.KV(xlog.ERROR, "err", fmt.Errorf("log error"))
+	logger.KV(xlog.ERROR, "err", goerrors.New("log error"))
 	result = b.String()
 	assert.Equal(t, `{"logName":"sd","component":"stackdriver","timestamp":"2019-01-01T00:00:00Z","message":{"err":"log error"},"severity":"ERROR","sourceLocation":{"file":"sd_test.go","line":92,"function":"Test_Formatter"}}`+"\n", result)
 	b.Reset()
