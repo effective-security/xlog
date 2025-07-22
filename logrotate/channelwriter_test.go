@@ -2,12 +2,14 @@ package logrotate
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type testWriter struct {
@@ -55,7 +57,7 @@ func TestChannelWriter_Flushes(t *testing.T) {
 	waitUntil := time.Now().Add(time.Second)
 	for dest.NumFlushes() == 0 {
 		if time.Now().After(waitUntil) {
-			t.Fatalf("Gave up waiting to be flushed")
+			require.FailNow(t, "Gave up waiting to be flushed")
 		}
 		time.Sleep(time.Millisecond)
 	}
@@ -64,9 +66,7 @@ func TestChannelWriter_Flushes(t *testing.T) {
 func TestChannelWriter_BufioIsFlushable(t *testing.T) {
 	dest := &testWriter{}
 	w := bufio.NewWriter(dest)
-	if _, ok := any(w).(flushable); !ok {
-		t.Errorf("bufio.Writer should be a flushable")
-	}
+	require.Implements(t, (*flushable)(nil), w, "bufio.Writer should be a flushable")
 }
 
 func TestChannelWriter_Writes(t *testing.T) {
@@ -87,28 +87,24 @@ func TestChannelWriter_Writes(t *testing.T) {
 		// write returns
 		w[0] = 'X'
 	}
-	if cw.IsStopped() {
-		t.Errorf("ChannelWriter.IsStopped() reports true, but we haven't called Stop() yet")
-	}
+	require.False(t, cw.IsStopped(), "ChannelWriter.IsStopped() reports true, but we haven't called Stop() yet")
 	waitUntil := time.Now().Add(time.Second)
 	for dest.NumWrites() < numMessages {
 		if time.Now().After(waitUntil) {
-			t.Fatalf("Gave up waiting for background writes to turn up, got %d out of %d", dest.NumWrites(), numMessages)
+			require.FailNowf(t,
+				"Gave up waiting for background writes to turn up",
+				"got %d out of %d", dest.NumWrites(), numMessages)
 		}
 		if dest.NumWrites() > 0 {
 			// Stop should drain the channel, so we should still get all our expected messages
 			cw.Stop()
-			if !cw.IsStopped() {
-				t.Errorf("Called Stop() on the ChannelWriter, but IsStopped() says no!")
-			}
+			require.True(t, cw.IsStopped(), "Called Stop() on the ChannelWriter, but IsStopped() says no!")
 		}
 		time.Sleep(time.Millisecond)
 	}
 	dest.lock.Lock()
 	defer dest.lock.Unlock()
 	for i, e := range exp {
-		if !bytes.Equal(e, dest.writes[i]) {
-			t.Errorf("Write %d: expecting: %s, got %s", i, e, dest.writes[i])
-		}
+		assert.Equalf(t, e, dest.writes[i], "Write %d", i)
 	}
 }

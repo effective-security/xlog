@@ -22,7 +22,8 @@ func Test_ContextWithLog(t *testing.T) {
 	assert.Equal(t, ctx, ctx2)
 
 	vals := xlog.ContextEntries(ctx)
-	assert.Len(t, vals, 8)
+	assert.Len(t, vals, 6)
+	assert.Equal(t, vals, []any{"cid", 123, "uid", 234, "val", "second"})
 }
 
 func Test_WithContext(t *testing.T) {

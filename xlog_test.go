@@ -16,9 +16,9 @@ package xlog_test
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	goerrors "errors"
-	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -32,6 +32,12 @@ import (
 var logger = xlog.NewPackageLogger("github.com/effective-security/xlog", "xlog_test")
 
 const logPrefixFormt = "2018-04-17 20:53:46.589926 "
+
+func init() {
+	xlog.TimeNowFn = func() time.Time {
+		return time.Date(2021, 4, 1, 0, 0, 0, 0, time.UTC)
+	}
+}
 
 // NOTE: keep the xxxError() functions at the beginnign of the file,
 // as tests produce the error stack
@@ -435,7 +441,7 @@ func Test_ColorFormatterDebug(t *testing.T) {
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 
-	logger.KV(xlog.INFO, "k1", 1, "err", fmt.Errorf("not found"))
+	logger.KV(xlog.INFO, "k1", 1, "err", goerrors.New("not found"))
 	writer.Flush()
 	expected = "2021-04-01 00:00:00.000000 \x1b[0;96mI | pkg=xlog_test, k1=1, err=\"not found\"\x1b[0m\n"
 	assert.Equal(t, expected, b.String())
@@ -446,7 +452,7 @@ func Test_ColorFormatterDebug(t *testing.T) {
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 
-	logger.Error("\tunable to find: \n", fmt.Errorf("not found"))
+	logger.Error("\tunable to find: \n", goerrors.New("not found"))
 	expected = "2021-04-01 00:00:00.000000 \x1b[0;91mE | pkg=xlog_test, \"unable to find:\", \"not found\"\x1b[0m\n"
 	assert.Equal(t, expected, b.String())
 	b.Reset()
@@ -505,7 +511,32 @@ func Test_WithJSONError(t *testing.T) {
 	result := b.String()
 
 	assert.Contains(t, result, `{"err":"originateError: msg=json logger, level=0\ngithub.com/effective-security/xlog_test.originateError`)
-	assert.Contains(t, result, `"func":"Test_WithJSONError","level":"E","number":1,"obj":{"A":"A","C":1234567},"pkg":"xlog_test","src":"xlog_test.go:504","time":"2021-04-01T00:00:00Z"}`)
+	assert.Contains(t, result, `"func":"Test_WithJSONError","level":"E","number":1,"obj":{"A":"A","C":1234567},"pkg":"xlog_test","src":"xlog_test.go:510","time":"2021-04-01T00:00:00Z"}`)
+}
+
+func Test_WithJSON_Context(t *testing.T) {
+	var b bytes.Buffer
+	writer := bufio.NewWriter(&b)
+
+	xlog.SetFormatter(xlog.NewJSONFormatter(writer).Options(xlog.FormatNoCaller, xlog.FormatSkipTime))
+
+	ctx := xlog.ContextWithKV(context.Background(), "k2str", "value2", "k1int", 1, "k3strings", []string{"s1", "s2"}, "k4bool", false, "k5nil", nil, "k6empty", "")
+	// update
+	ctx = xlog.ContextWithKV(ctx, "k4bool", true, "k1int", 2, "k2str", "value3", "k3strings", []string{"s3", "s4"}, "k5nil", nil, "k6empty", "")
+
+	foo := struct {
+		A string
+		b string
+		C int
+	}{A: "A", b: "b", C: 1234567}
+
+	logger.ContextKV(ctx, xlog.INFO, "number", 1, "obj", foo)
+	result := b.String()
+
+	// keys must be orderes, without nil and empty string values
+	exp := `{"k1int":2,"k2str":"value3","k3strings":["s3","s4"],"k4bool":true,"level":"I","number":1,"obj":{"A":"A","C":1234567},"pkg":"xlog_test"}
+`
+	assert.Equal(t, exp, result)
 }
 
 func Test_NilFormatter(t *testing.T) {
@@ -633,6 +664,5 @@ func f3(stack bool) error {
 	return err
 }
 func f4() error {
-	return fmt.Errorf("fmt error")
-	//return errors.New("original error")
+	return errors.New("fmt error")
 }

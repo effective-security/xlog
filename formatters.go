@@ -26,6 +26,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -63,7 +64,7 @@ type Formatter interface {
 	Options(ops ...FormatterOption) Formatter
 }
 
-// TimeNowFn to override in unit tests
+// TimeNowFn returns the current time; it may be overridden in tests for deterministic behavior.
 var TimeNowFn = time.Now
 
 // NewStringFormatter returns string-based formatter
@@ -265,15 +266,10 @@ func (c *PrettyFormatter) Flush() {
 	c.w.Flush()
 }
 
-// color pallete map
+// ColorOff resets ANSI color to terminal default.
+var ColorOff = []byte("\033[0m")
+
 var (
-	ColorOff = []byte("\033[0m")
-	// colorRed         = []byte("\033[0;31m")
-	// colorGreen       = []byte("\033[0;32m")
-	// colorOrange      = []byte("\033[0;33m")
-	// colorBlue        = []byte("\033[0;34m")
-	// colorPurple      = []byte("\033[0;35m")
-	// colorCyan        = []byte("\033[0;36m")
 	colorLightRed    = []byte("\033[0;91m") // ERROR
 	colorLightGreen  = []byte("\033[0;92m") // NOTICE
 	colorLightOrange = []byte("\033[0;93m") // WARN
@@ -351,7 +347,14 @@ func flatten(printEmpty bool, kvList ...any) []any {
 	return list
 }
 
-// EscapedString returns string value stuitable for logging
+// bufferPool is a sync.Pool for reusing bytes.Buffer objects
+var bufferPool = sync.Pool{
+	New: func() any {
+		return &bytes.Buffer{}
+	},
+}
+
+// EscapedString returns a JSON-escaped string representation of the value, suitable for logging.
 func EscapedString(value any) string {
 	switch typ := value.(type) {
 	case error:
@@ -395,14 +398,21 @@ func EscapedString(value any) string {
 		// keep as is to json.Encode
 	}
 
-	buffer := &bytes.Buffer{}
+	// Get buffer from pool
+	buffer := bufferPool.Get().(*bytes.Buffer)
+	buffer.Reset() // Clear any previous content
+	defer func() {
+		buffer.Reset()
+		bufferPool.Put(buffer) // Return to pool when done
+	}()
+
 	encoder := json.NewEncoder(buffer)
 	encoder.SetEscapeHTML(false)
 	_ = encoder.Encode(value)
 	return strings.TrimSpace(buffer.String())
 }
 
-// Caller returns caller function name, and location
+// Caller returns the function name, file, and line number of the caller at the given depth.
 func Caller(depth int) (name string, file string, line int) {
 	pc, file, line, ok := runtime.Caller(depth)
 

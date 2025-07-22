@@ -16,6 +16,7 @@ is used to trace important functions calls and maybe enable on the cloud more fr
 ```go
 var logger = xlog.NewPackageLogger("github.com/yourorg/yourrepo", "yourpackage")
 
+// Entries must be provided as key/value pairs: key (string) followed by its value.
 logger.KV(xlog.INFO, "version", v1, "any", override)
 ```
 
