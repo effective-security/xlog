@@ -47,7 +47,7 @@ type JSONFormatter struct {
 
 // Options allows to configure formatter behavior
 func (c *JSONFormatter) Options(ops ...FormatterOption) Formatter {
-	c.config.options(ops)
+	c.options(ops)
 	return c
 }
 
@@ -101,7 +101,7 @@ func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, escape bool, k
 
 // Flush the logs
 func (c *JSONFormatter) Flush() {
-	c.w.Flush()
+	_ = c.w.Flush()
 }
 
 func kvToMap(kvList ...any) map[string]any {

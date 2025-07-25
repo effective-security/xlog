@@ -1,21 +1,35 @@
+version: "2"
 run:
   skip-files: []
+  timeout: 5m
+  modules-download-mode: readonly
+  go: "1.24"
+  goimports:
+    local-prefixes: github.com/golangci/golangci-lint
 
 linters:
   enable:
     #- revive
     - goconst
-    - goimports
-    - stylecheck
     #- unparam
     - staticcheck
     - unused
+
+linters-settings:
+  goconst:
+    min-len: 3
+    min-occurrences: 3
 
 issues:
   exclude:
     - SA6002
   include:
     - EXC0012 # revive: Annoying issue about not having a comment. The rare codebase has such comments
-              # - exported (.+) should have comment( \(or a comment on this block\))? or be unexported
+      # - exported (.+) should have comment( \(or a comment on this block\))? or be unexported
     - EXC0014 # revive: Annoying issue about not having a comment. The rare codebase has such comments
-              # - comment on exported (.+) should be of the form "(.+)..."
+      # - comment on exported (.+) should be of the form "(.+)..."
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - goconst
+        - gomnd

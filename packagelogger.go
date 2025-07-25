@@ -51,51 +51,45 @@ func (p *PackageLogger) WithValues(keysAndValues ...any) KeyValueLogger {
 
 func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, entries ...any) {
 	logger.Lock()
-	hook := logger.onError
-	formatter := logger.formatter
-	level := p.level
-	vs := p.values
-	logger.Unlock()
+	defer logger.Unlock()
 
-	if inLevel == ERROR && hook != nil {
-		hook(p.pkg)
+	if inLevel == ERROR && logger.onError != nil {
+		logger.onError(p.pkg)
 	}
-	if inLevel != CRITICAL && level < inLevel {
+
+	if inLevel != CRITICAL && p.level < inLevel {
 		return
 	}
-	if len(vs) > 0 {
-		entries = append(vs, entries...)
+	if len(p.values) > 0 {
+		entries = append(p.values, entries...)
 	}
-	if formatter != nil {
+	if logger.formatter != nil {
 		if t == plain {
-			formatter.Format(p.pkg, inLevel, depth+1, entries...)
+			logger.formatter.Format(p.pkg, inLevel, depth+1, entries...)
 		} else {
-			formatter.FormatKV(p.pkg, inLevel, depth+1, entries...)
+			logger.formatter.FormatKV(p.pkg, inLevel, depth+1, entries...)
 		}
 	}
 }
 
 func (p *PackageLogger) internalLogf(depth int, inLevel LogLevel, format string, args ...any) {
 	logger.Lock()
-	hook := logger.onError
-	formatter := logger.formatter
-	level := p.level
-	vs := p.values
-	logger.Unlock()
+	defer logger.Unlock()
 
-	if inLevel == ERROR && hook != nil {
-		hook(p.pkg)
+	if inLevel == ERROR && logger.onError != nil {
+		logger.onError(p.pkg)
 	}
-	if inLevel != CRITICAL && level < inLevel {
+
+	if inLevel != CRITICAL && p.level < inLevel {
 		return
 	}
-	if formatter != nil {
+	if logger.formatter != nil {
 		entries := []any{fmt.Sprintf(format, args...)}
-		if len(vs) > 0 {
-			entries = append(flatten(false, vs...), entries)
+		if len(p.values) > 0 {
+			entries = append(flatten(false, p.values...), entries)
 		}
 
-		formatter.Format(p.pkg, inLevel, depth+1, entries...)
+		logger.formatter.Format(p.pkg, inLevel, depth+1, entries...)
 	}
 }
 
