@@ -21,7 +21,9 @@ func Test_Rotate(t *testing.T) {
 
 	logRotate, err := logrotate.Initialize(tmpDir, "rotator", 1, 1, false, writer)
 	require.NoError(t, err)
-	defer logRotate.Close()
+	defer func() {
+		_ = logRotate.Close()
+	}()
 
 	logger := xlog.NewPackageLogger("github.com/effective-security/xlog", "logrotate")
 	xlog.SetGlobalLogLevel(xlog.TRACE)
@@ -38,6 +40,6 @@ func Test_Rotate(t *testing.T) {
 	logger.Notice("1")
 	logger.Noticef("%d", 2)
 
-	writer.Flush()
+	_ = writer.Flush()
 	assert.NotEmpty(t, b.Bytes())
 }

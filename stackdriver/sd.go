@@ -72,7 +72,7 @@ func NewFormatter(w io.Writer, logName string) xlog.Formatter {
 
 // Options allows to configure formatter behavior
 func (c *formatter) Options(ops ...xlog.FormatterOption) xlog.Formatter {
-	c.config.options(ops)
+	c.options(ops)
 	return c
 }
 
@@ -122,11 +122,11 @@ func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj *kventrie
 		},
 	}
 
-	if !c.config.skipTime {
+	if !c.skipTime {
 		ee.Time = xlog.TimeNowFn().UTC().Format(time.RFC3339)
 	}
 
-	if c.config.withCaller {
+	if c.withCaller {
 		if c.debug || l <= xlog.ERROR {
 			ee.Source.FilePath = path.Base(file)
 			ee.Source.LineNumber = line
@@ -144,7 +144,7 @@ func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj *kventrie
 
 // Flush the logs
 func (c *formatter) Flush() {
-	c.w.Flush()
+	_ = c.w.Flush()
 }
 
 type entry struct {

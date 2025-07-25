@@ -107,20 +107,21 @@ func (cw *ChannelWriter) listen(dest io.Writer, flushInterval time.Duration) {
 		select {
 		case <-flushChan:
 			if canFlush {
-				flusher.Flush()
+				_ = flusher.Flush()
 			}
 		case b := <-cw.write:
 			_, _ = dest.Write(b)
-			cw.buffPool.Put(b)
+			cw.buffPool.Put(b) //nolint:staticcheck
 		case <-cw.stop:
 			// drain what's left of the Write channel
 			for {
 				select {
 				case b := <-cw.write:
 					_, _ = dest.Write(b)
+					cw.buffPool.Put(b) //nolint:staticcheck
 				default:
 					if canFlush {
-						flusher.Flush()
+						_ = flusher.Flush()
 					}
 					return
 				}

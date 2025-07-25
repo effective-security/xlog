@@ -26,7 +26,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -86,14 +85,14 @@ type StringFormatter struct {
 
 // Options allows to configure formatter behavior
 func (s *StringFormatter) Options(ops ...FormatterOption) Formatter {
-	s.config.options(ops)
+	s.options(ops)
 	return s
 }
 
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
 func (s *StringFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...any) {
-	s.format(pkg, l, depth+1, false, flatten(s.config.printEmpty, entries...)...)
+	s.format(pkg, l, depth+1, false, flatten(s.printEmpty, entries...)...)
 }
 
 // Format log entry string to the stream
@@ -151,7 +150,7 @@ func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...any) {
 		if p.withLocation {
 			_, _ = w.WriteString("src=")
 			// It's always the same number of frames to the user's call.
-			_, _ = w.WriteString(fmt.Sprintf("%s:%d", file, line))
+			_, _ = fmt.Fprintf(w, "%s:%d", file, line)
 			_, _ = w.WriteString(p.separator)
 		}
 
@@ -190,7 +189,7 @@ func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...any) {
 
 // Flush the logs
 func (s *StringFormatter) Flush() {
-	s.w.Flush()
+	_ = s.w.Flush()
 }
 
 // NewPrettyFormatter returns an instance of PrettyFormatter
@@ -214,7 +213,7 @@ type PrettyFormatter struct {
 
 // Options allows to configure formatter behavior
 func (c *PrettyFormatter) Options(ops ...FormatterOption) Formatter {
-	c.config.options(ops)
+	c.options(ops)
 	return c
 }
 
@@ -236,7 +235,7 @@ func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		ts := now.Format("2006-01-02 15:04:05")
 		_, _ = c.w.WriteString(ts)
 		ms := now.Nanosecond() / 1000
-		_, _ = c.w.WriteString(fmt.Sprintf(".%06d ", ms))
+		_, _ = fmt.Fprintf(c.w, ".%06d ", ms)
 	}
 	if c.color {
 		_, _ = c.w.Write(LevelColors[l])
@@ -263,7 +262,7 @@ func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 
 // Flush the logs
 func (c *PrettyFormatter) Flush() {
-	c.w.Flush()
+	_ = c.w.Flush()
 }
 
 // ColorOff resets ANSI color to terminal default.
@@ -347,13 +346,6 @@ func flatten(printEmpty bool, kvList ...any) []any {
 	return list
 }
 
-// bufferPool is a sync.Pool for reusing bytes.Buffer objects
-var bufferPool = sync.Pool{
-	New: func() any {
-		return &bytes.Buffer{}
-	},
-}
-
 // EscapedString returns a JSON-escaped string representation of the value, suitable for logging.
 func EscapedString(value any) string {
 	switch typ := value.(type) {
@@ -398,15 +390,9 @@ func EscapedString(value any) string {
 		// keep as is to json.Encode
 	}
 
-	// Get buffer from pool
-	buffer := bufferPool.Get().(*bytes.Buffer)
-	buffer.Reset() // Clear any previous content
-	defer func() {
-		buffer.Reset()
-		bufferPool.Put(buffer) // Return to pool when done
-	}()
-
-	encoder := json.NewEncoder(buffer)
+	// Create a new buffer for each call to avoid concurrency issues
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
 	encoder.SetEscapeHTML(false)
 	_ = encoder.Encode(value)
 	return strings.TrimSpace(buffer.String())
