@@ -39,11 +39,19 @@ func TestEscapedString(t *testing.T) {
 
 	errToTest := errors.New("issue: some error")
 
+	assert.Equal(t, `"one (1)"`, xlog.EscapedString(wvs(1)))
+
 	tcases := []struct {
 		name string
 		val  any
 		exp  string
 	}{
+		{"wvs1", wvs(1), `"one (1)"`},
+		{"wvs2", wvs(2), `"two (2)"`},
+		{"wvs3", wvs(3), `"more than 2 (3)"`},
+		{"ws1", ws(1), `"One"`},
+		{"ws2", ws(2), `"Two"`},
+		{"ws3", ws(3), `"More than 2"`},
 		{"int", 1, "1"},
 		{"bytes", []byte(`bytes`), `"Ynl0ZXM="`},
 		{"uint", uint(11234123412), "11234123412"},
@@ -70,6 +78,30 @@ func TestEscapedString(t *testing.T) {
 	for _, tc := range tcases {
 		assert.Equal(t, tc.exp, xlog.EscapedString(tc.val), tc.name)
 	}
+}
+
+type ws int32
+
+func (e ws) String() string {
+	switch e {
+	case 1:
+		return "One"
+	case 2:
+		return "Two"
+	}
+	return "More than 2"
+}
+
+type wvs int32
+
+func (e wvs) ValueString() string {
+	switch e {
+	case 1:
+		return "one"
+	case 2:
+		return "two"
+	}
+	return "more than 2"
 }
 
 func TestEscapedStringConcurrent(t *testing.T) {
