@@ -346,6 +346,10 @@ func flatten(printEmpty bool, kvList ...any) []any {
 	return list
 }
 
+type WithValueString interface {
+	ValueString() string
+}
+
 // EscapedString returns a JSON-escaped string representation of the value, suitable for logging.
 func EscapedString(value any) string {
 	switch typ := value.(type) {
@@ -364,6 +368,8 @@ func EscapedString(value any) string {
 		return strconv.FormatUint(uint64(typ), 10)
 	case int64:
 		return strconv.FormatInt(typ, 10)
+	case int32:
+		return strconv.FormatInt(int64(typ), 10)
 	case int:
 		return strconv.FormatInt(int64(typ), 10)
 	case bool:
@@ -387,7 +393,11 @@ func EscapedString(value any) string {
 		value = strings.TrimSpace(typ.String())
 		// pass through for encoding
 	default:
-		// keep as is to json.Encode
+		// Handle proto enums
+		if en, ok := value.(WithValueString); ok {
+			return fmt.Sprintf(`"%s (%v)"`, en.ValueString(), value)
+		}
+		// pass through for encoding
 	}
 
 	// Create a new buffer for each call to avoid concurrency issues
