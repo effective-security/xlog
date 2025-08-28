@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/effective-security/xlog"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -170,13 +170,13 @@ func Test_WithTracedError(t *testing.T) {
 			"Test_WithTracedError(1)",
 			1,
 			"E | pkg=xlog_test, \"err=[originateError: msg=Test_WithTracedError(1), level=0]\"\n",
-			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithTracedError(1), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\t",
+			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithTracedError(1), level=0\\n(1) attached stack trace\\n  -- stack trace:\\n  | github.com/effective-security/xlog_test.traceError\\n",
 		},
 		{
 			"Test_WithTracedError(4)",
 			2,
 			"E | pkg=xlog_test, \"err=[originateError: msg=Test_WithTracedError(4), level=0]\"\n",
-			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithTracedError(4), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\t",
+			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithTracedError(4), level=0\\n(1) attached stack trace\\n  -- stack trace:\\n  | github.com/effective-security/xlog_test.traceError\\n",
 		},
 	}
 
@@ -218,13 +218,13 @@ func Test_WithAnnotatedError(t *testing.T) {
 			"Test_WithAnnotatedError(1)",
 			1,
 			"E | pkg=xlog_test, \"err=[annotateError, level=0: originateError: msg=Test_WithAnnotatedError(1), level=0]\"\n",
-			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithAnnotatedError(1), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\t",
+			"E | pkg=xlog_test, \"stack=[annotateError, level=0: originateError: msg=Test_WithAnnotatedError(1), level=0\\n(1) annotateError, level=0\\nWraps: (2) attached stack trace\\n  -- stack trace:\\n  | github.com/effective-security/xlog_test.originateError\\n",
 		},
 		{
 			"Test_WithAnnotatedError(4)",
 			2,
 			"E | pkg=xlog_test, \"err=[annotateError, level=0: originateError: msg=Test_WithAnnotatedError(4), level=0]\"\n",
-			"E | pkg=xlog_test, \"stack=[originateError: msg=Test_WithAnnotatedError(4), level=0\\ngithub.com/effective-security/xlog_test.originateError\\n\\t",
+			"E | pkg=xlog_test, \"stack=[annotateError, level=0: originateError: msg=Test_WithAnnotatedError(4), level=0\\n(1) annotateError, level=0\\nWraps: (2) attached stack trace\\n  -- stack trace:\\n  | github.com/effective-security/xlog_test.originateError\\n",
 		},
 	}
 
@@ -416,7 +416,7 @@ func Test_StringFormatter(t *testing.T) {
 		"err", withAnnotateError("logs error", 2),
 	)
 	result = b.String()
-	expected = `time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 bool=false time=2021-04-01T00:00:00Z updated=null period=2s strings=["s1","s2"] err="originateError: msg=logs error, level=0`
+	expected = `time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 bool=false time=2021-04-01T00:00:00Z updated=null period=2s strings=["s1","s2"] err="annotateError, level=0: originateError: msg=logs error, level=0`
 	assert.Contains(t, result, expected)
 	b.Reset()
 }
@@ -508,7 +508,7 @@ func Test_WithJSONError(t *testing.T) {
 	logger.KV(xlog.ERROR, "err", err, "number", 1, "obj", foo)
 	result := b.String()
 
-	assert.Contains(t, result, `{"err":"originateError: msg=json logger, level=0\ngithub.com/effective-security/xlog_test.originateError`)
+	assert.Contains(t, result, `{"err":"originateError: msg=json logger, level=0`)
 	//assert.Contains(t, result, `"func":"Test_WithJSONError","level":"E","number":1,"obj":{"A":"A","C":1234567},"pkg":"xlog_test","src":"xlog_test.go:510","time":"2021-04-01T00:00:00Z"}`)
 }
 

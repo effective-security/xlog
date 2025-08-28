@@ -9,8 +9,8 @@ import (
 
 	"sync"
 
+	"github.com/cockroachdb/errors"
 	"github.com/effective-security/xlog"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,7 +66,7 @@ func TestEscapedString(t *testing.T) {
 		{"duration", 5 * time.Second, `5s`},
 		{"struct", structVal, `{"S":"str","N":1,"D":"2021-04-01T00:00:00Z","DPtr":"2021-04-01T00:00:00Z","DNull":null,"Period":300000000000}`},
 		{"foo", stru, `{"Foo":"foo","B":true,"I":-1,"DNull":null}`},
-		{"foo", reflect.TypeOf(errToTest), `"*errors.fundamental"`},
+		{"foo", reflect.TypeOf(errToTest), `"*withstack.withStack"`},
 		{"str", "str", `"str"`},
 		{"whitespace", "\t\nstr\n", `"str"`},
 		{"err", errToTest.Error(), `"issue: some error"`},
