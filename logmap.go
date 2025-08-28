@@ -18,7 +18,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pkg/errors"
+	"github.com/cockroachdb/errors"
 )
 
 // LogLevel is the set of all log levels.
