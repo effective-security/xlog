@@ -3,6 +3,7 @@ package xlog
 import (
 	"context"
 	"sort"
+	"sync"
 )
 
 type contextKey int
@@ -15,6 +16,7 @@ const (
 type contextLogs struct {
 	entries []any
 	kvMap   map[string]any // internal map for efficient key-value operations
+	lock    sync.RWMutex
 }
 
 // ContextWithKV returns context with values to be added to logs,
@@ -42,6 +44,8 @@ func ContextWithKV(ctx context.Context, entries ...any) context.Context {
 		ctx = context.WithValue(ctx, keyContext, rctx)
 	} else {
 		rctx = v.(*contextLogs)
+		rctx.lock.Lock()
+		defer rctx.lock.Unlock()
 	}
 
 	// Process entries in pairs
@@ -95,5 +99,7 @@ func ContextEntries(ctx context.Context) []any {
 	}
 
 	rctx := v.(*contextLogs)
+	rctx.lock.RLock()
+	defer rctx.lock.RUnlock()
 	return rctx.entries
 }
