@@ -37,7 +37,7 @@ const (
 	severityWarning  severity = "WARNING"
 	severityError    severity = "ERROR"
 	severityCritical severity = "CRITICAL"
-	severityAlert    severity = "ALERT"
+	//severityAlert    severity = "ALERT"
 )
 
 var levelsToSeverity = map[xlog.LogLevel]severity{
@@ -49,6 +49,8 @@ var levelsToSeverity = map[xlog.LogLevel]severity{
 	xlog.ERROR:    severityError,
 	xlog.CRITICAL: severityCritical,
 }
+
+var MaxLogMessageLength = 2 * 1024
 
 // formatter provides logs format for StackDriver
 type formatter struct {
@@ -105,8 +107,8 @@ func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj *kventrie
 
 	if len(entries) > 0 {
 		str := fmt.Sprint(entries...)
-		if len(str) > 1024 {
-			str = str[:1024] + "..."
+		if len(str) > MaxLogMessageLength {
+			str = str[:MaxLogMessageLength] + "..."
 		}
 		obj.entries = append(obj.entries, "msg", str)
 	}
