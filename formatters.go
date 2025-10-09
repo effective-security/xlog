@@ -66,6 +66,8 @@ type Formatter interface {
 // TimeNowFn returns the current time; it may be overridden in tests for deterministic behavior.
 var TimeNowFn = time.Now
 
+var MaxLogMessageLength = 2 * 1024
+
 // NewStringFormatter returns string-based formatter
 func NewStringFormatter(w io.Writer) Formatter {
 	return &StringFormatter{
@@ -336,8 +338,8 @@ func flatten(printEmpty bool, kvList ...any) []any {
 		}
 		val := EscapedString(v)
 		if val != `""` || printEmpty {
-			if len(val) > 1024 {
-				val = val[:1024] + "...\""
+			if len(val) > MaxLogMessageLength {
+				val = val[:MaxLogMessageLength] + "...\""
 			}
 			list = append(list, k+"="+val)
 			j++
