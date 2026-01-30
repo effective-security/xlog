@@ -29,6 +29,7 @@ import (
 type logrotator struct {
 	oldFormatter xlog.Formatter
 	logger       io.Writer
+	fileBuf      *bufio.Writer // non-nil only when extraSink is nil; flushed on Close
 	channel      *ChannelWriter
 	closed       bool
 }
@@ -37,6 +38,8 @@ type logrotator struct {
 // To ensure that any queued/buffered but unwritten log entries are flushed to disk
 // call Stop() on the returned stopper before exiting the process.
 // Once stopped, you can't resume the logger, you need to create a new one.
+// When extraSink is non-nil (e.g. os.Stdout), logs are written to both the file and extraSink
+// simultaneously (no buffering in front of the file so both see every write immediately).
 func Initialize(logFolder, baseFilename string, maxAge, maxSize int, buffered bool, extraSink io.Writer) (io.Closer, error) {
 	err := os.MkdirAll(logFolder, 0755)
 	if err != nil {
@@ -50,12 +53,16 @@ func Initialize(logFolder, baseFilename string, maxAge, maxSize int, buffered bo
 	}
 
 	l := &logrotator{
-		logger:       bufio.NewWriterSize(&fileWriter, 8192),
 		oldFormatter: xlog.GetFormatter(),
 	}
 
 	if extraSink != nil {
-		l.logger = io.MultiWriter(l.logger, extraSink)
+		// No bufio: every write goes to both file and extraSink immediately
+		l.logger = io.MultiWriter(&fileWriter, extraSink)
+	} else {
+		fileBuf := bufio.NewWriterSize(&fileWriter, 8192)
+		l.logger = fileBuf
+		l.fileBuf = fileBuf
 	}
 
 	if buffered {
@@ -80,6 +87,11 @@ func (c *logrotator) Close() error {
 		return errors.New("already closed")
 	}
 	c.closed = true
+
+	// Flush file buffer so file gets all log data when extraSink was used
+	if c.fileBuf != nil {
+		_ = c.fileBuf.Flush()
+	}
 
 	// restore output
 	xlog.SetFormatter(c.oldFormatter)
