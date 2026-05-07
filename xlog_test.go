@@ -113,7 +113,7 @@ func Test_PrettyFormatter(t *testing.T) {
 	}{Foo: "bar"}
 
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "k3", k3)
-	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_PrettyFormatter, k1=1, k2=false, k3={\"Foo\":\"bar\"}\n"
+	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_PrettyFormatter, k1=\"1\", k2=false, k3={\"Foo\":\"bar\"}\n"
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 
@@ -148,13 +148,13 @@ func Test_WithEmpty(t *testing.T) {
 	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatPrintEmpty))
 
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "empty", "", "null", nil)
-	expected := "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=1, k2=false, empty=\"\", null=null\n"
+	expected := "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=\"1\", k2=false, empty=\"\", null=null\n"
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 
 	xlog.SetFormatter(xlog.NewPrettyFormatter(writer))
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "empty", "", "null", nil)
-	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=1, k2=false\n"
+	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=\"1\", k2=false\n"
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 }
@@ -299,7 +299,7 @@ func Test_PrettyFormatterDebug(t *testing.T) {
 	logger.KV(xlog.INFO, "k1", 1, "k2", false)
 	_ = writer.Flush()
 	result = b.String()
-	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_PrettyFormatterDebug, k1=1, k2=false\n"
+	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_PrettyFormatterDebug, k1=\"1\", k2=false\n"
 	assert.Equal(t, expected, result)
 	b.Reset()
 
@@ -363,7 +363,7 @@ func Test_StringFormatter(t *testing.T) {
 		logger.Infof("Test Info")
 	}()
 	result := b.String()
-	assert.Equal(t, "time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter.func1 \"Test Info\"\n", result)
+	assert.Equal(t, "time=\"2021-04-01T00:00:00Z\" level=I pkg=xlog_test func=Test_StringFormatter.func1 \"Test Info\"\n", result)
 	b.Reset()
 
 	func() {
@@ -371,23 +371,23 @@ func Test_StringFormatter(t *testing.T) {
 		s.log("Test Info")
 	}()
 	result = b.String()
-	assert.Equal(t, "time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=log \"Test Info\"\n", result)
+	assert.Equal(t, "time=\"2021-04-01T00:00:00Z\" level=I pkg=xlog_test func=log \"Test Info\"\n", result)
 	b.Reset()
 
 	logger.Errorf("Test Error")
 	result = b.String()
-	assert.Equal(t, "time=2021-04-01T00:00:00Z level=E pkg=xlog_test func=Test_StringFormatter \"Test Error\"\n", result)
+	assert.Equal(t, "time=\"2021-04-01T00:00:00Z\" level=E pkg=xlog_test func=Test_StringFormatter \"Test Error\"\n", result)
 	b.Reset()
 
 	logger.Warningf("Test Warning")
 	result = b.String()
-	assert.Equal(t, "time=2021-04-01T00:00:00Z level=W pkg=xlog_test func=Test_StringFormatter \"Test Warning\"\n", result)
+	assert.Equal(t, "time=\"2021-04-01T00:00:00Z\" level=W pkg=xlog_test func=Test_StringFormatter \"Test Warning\"\n", result)
 	b.Reset()
 
 	// Debug level is disabled
 	logger.Debugf("Test Debug")
 	result = b.String()
-	assert.Contains(t, "time=2021-04-01T00:00:00Z level=E pkg=xlog_test func=Test_StringFormatter \"Test Debug\"\n", result)
+	assert.Contains(t, "time=\"2021-04-01T00:00:00Z\" level=E pkg=xlog_test func=Test_StringFormatter \"Test Debug\"\n", result)
 	b.Reset()
 
 	xlog.SetGlobalLogLevel(xlog.DEBUG)
@@ -395,7 +395,7 @@ func Test_StringFormatter(t *testing.T) {
 	log2 := logger.WithValues("count", 1)
 	log2.KV(xlog.DEBUG, "level", "debug")
 	result = b.String()
-	expected := "time=2021-04-01T00:00:00Z level=D pkg=xlog_test func=Test_StringFormatter count=1 level=\"debug\"\n"
+	expected := "time=\"2021-04-01T00:00:00Z\" level=D pkg=xlog_test func=Test_StringFormatter count=\"1\" level=\"debug\"\n"
 	assert.Equal(t, expected, result)
 	b.Reset()
 
@@ -416,7 +416,7 @@ func Test_StringFormatter(t *testing.T) {
 		"err", withAnnotateError("logs error", 2),
 	)
 	result = b.String()
-	expected = `time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 bool=false time=2021-04-01T00:00:00Z updated=null period=2s strings=["s1","s2"] err="annotateError, level=0: originateError: msg=logs error, level=0`
+	expected = `time="2021-04-01T00:00:00Z" level=I pkg=xlog_test func=Test_StringFormatter count="1" int="1" nint="-2" uint64="123456789123456" bool=false time="2021-04-01T00:00:00Z" updated=null period=2s strings=["s1","s2"] err="annotateError, level=0: originateError: msg=logs error, level=0`
 	assert.Contains(t, result, expected)
 	b.Reset()
 }
@@ -441,7 +441,7 @@ func Test_ColorFormatterDebug(t *testing.T) {
 
 	logger.KV(xlog.INFO, "k1", 1, "err", goerrors.New("not found"))
 	_ = writer.Flush()
-	expected = "2021-04-01 00:00:00.000000 \x1b[0;96mI | pkg=xlog_test, k1=1, err=\"not found\"\x1b[0m\n"
+	expected = "2021-04-01 00:00:00.000000 \x1b[0;96mI | pkg=xlog_test, k1=\"1\", err=\"not found\"\x1b[0m\n"
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 

@@ -105,9 +105,9 @@ func (s *StringFormatter) Format(pkg string, l LogLevel, depth int, entries ...a
 func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...any) {
 	if !s.skipTime {
 		now := TimeNowFn().UTC()
-		_, _ = s.w.WriteString("time=")
+		_, _ = s.w.WriteString("time=\"")
 		_, _ = s.w.WriteString(now.Format(time.RFC3339))
-		_ = s.w.WriteByte(' ')
+		_, _ = s.w.WriteString("\" ")
 	}
 	if !s.skipLevel {
 		_, _ = s.w.WriteString("level=")
@@ -365,15 +365,17 @@ func EscapedString(value any) string {
 		value = strings.TrimSpace(typ)
 		// pass through for encoding
 	case uint64:
-		return strconv.FormatUint(typ, 10)
-	case uint:
+		return "\"" + strconv.FormatUint(typ, 10) + "\""
+	case uint32:
 		return strconv.FormatUint(uint64(typ), 10)
+	case uint:
+		return "\"" + strconv.FormatUint(uint64(typ), 10) + "\""
 	case int64:
-		return strconv.FormatInt(typ, 10)
+		return "\"" + strconv.FormatInt(typ, 10) + "\""
 	case int32:
 		return strconv.FormatInt(int64(typ), 10)
 	case int:
-		return strconv.FormatInt(int64(typ), 10)
+		return "\"" + strconv.FormatInt(int64(typ), 10) + "\""
 	case bool:
 		if typ {
 			return "true"
@@ -384,12 +386,12 @@ func EscapedString(value any) string {
 	case reflect.Type:
 		value = typ.String()
 	case time.Time:
-		return typ.UTC().Format(time.RFC3339)
+		return "\"" + typ.UTC().Format(time.RFC3339) + "\""
 	case *time.Time:
 		if typ == nil {
 			return "null"
 		}
-		return typ.UTC().Format(time.RFC3339)
+		return "\"" + typ.UTC().Format(time.RFC3339) + "\""
 		// pass through for encoding
 	case fmt.Stringer:
 		value = strings.TrimSpace(typ.String())

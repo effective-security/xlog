@@ -24,7 +24,7 @@ func Test_FormatterOptions(t *testing.T) {
 
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "nil", nil, "empty", "")
 	result := b.String()
-	assert.Equal(t, `{"logName":"sd","component":"stackdriver","message":{"k1":1,"k2":false,"nil":null,"empty":""},"severity":"INFO","sourceLocation":{"file":"sd_test.go","line":25,"function":"Test_FormatterOptions"}}`+"\n", result)
+	assert.Equal(t, `{"logName":"sd","component":"stackdriver","message":{"k1":"1","k2":false,"nil":null,"empty":""},"severity":"INFO","sourceLocation":{"file":"sd_test.go","line":25,"function":"Test_FormatterOptions"}}`+"\n", result)
 	b.Reset()
 
 	xlog.SetFormatter(NewFormatter(writer, "sd").
@@ -32,7 +32,7 @@ func Test_FormatterOptions(t *testing.T) {
 
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "nil", nil, "empty", "")
 	result = b.String()
-	assert.Equal(t, `{"logName":"sd","component":"stackdriver","message":{"k1":1,"k2":false,"nil":null,"empty":""},"severity":"INFO","sourceLocation":{"function":"Test_FormatterOptions"}}`+"\n", result)
+	assert.Equal(t, `{"logName":"sd","component":"stackdriver","message":{"k1":"1","k2":false,"nil":null,"empty":""},"severity":"INFO","sourceLocation":{"function":"Test_FormatterOptions"}}`+"\n", result)
 	b.Reset()
 
 	xlog.SetFormatter(NewFormatter(writer, "sd").
@@ -50,7 +50,7 @@ func Test_FormatterOptions(t *testing.T) {
 
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "nil", nil, "empty", "", "zero", 0, "struct", stru)
 	result = b.String()
-	assert.Equal(t, `{"logName":"sd","component":"stackdriver","message":{"k1":1,"k2":false,"zero":0,"struct":{"A":"a","B":1,"C":1.1,"D":123,"E":{},"Is":false,"Dur":1000000000}},"severity":"INFO","sourceLocation":{"function":"Test_FormatterOptions"}}`+"\n", result)
+	assert.Equal(t, `{"logName":"sd","component":"stackdriver","message":{"k1":"1","k2":false,"zero":"0","struct":{"A":"a","B":1,"C":1.1,"D":123,"E":{},"Is":false,"Dur":1000000000}},"severity":"INFO","sourceLocation":{"function":"Test_FormatterOptions"}}`+"\n", result)
 	b.Reset()
 
 	assert.Panics(t, func() {
@@ -86,7 +86,7 @@ func Test_Formatter(t *testing.T) {
 
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "k3", k3, "nil", nil, "empty", "")
 	result = b.String()
-	assert.Equal(t, `{"logName":"sd","component":"stackdriver","timestamp":"2019-01-01T00:00:00Z","message":{"k1":1,"k2":false,"k3":{"Foo":"bar"}},"severity":"INFO","sourceLocation":{"function":"Test_Formatter"}}`+"\n", result)
+	assert.Equal(t, `{"logName":"sd","component":"stackdriver","timestamp":"2019-01-01T00:00:00Z","message":{"k1":"1","k2":false,"k3":{"Foo":"bar"}},"severity":"INFO","sourceLocation":{"function":"Test_Formatter"}}`+"\n", result)
 	b.Reset()
 
 	logger.KV(xlog.ERROR, "err", goerrors.New("log error"))
