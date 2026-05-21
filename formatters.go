@@ -352,6 +352,30 @@ type WithValueString interface {
 	ValueString() string
 }
 
+// numericStringMaxLen is the maximum length, in digits, that a numeric value
+// can have before it must be prefixed with "_" to prevent log ingestion systems
+// (e.g. Grafana) from coercing it back into an integer and clamping to MAX_INT.
+const numericStringMaxLen = 15
+
+// prefixLongNumber returns s prefixed with "_" if s represents an integer
+// whose decimal text is longer than numericStringMaxLen digits. The leading
+// sign (if any) does not count toward the digit length.
+func prefixLongNumber(s string) string {
+	digits := s
+	if len(digits) > 0 && (digits[0] == '-' || digits[0] == '+') {
+		digits = digits[1:]
+	}
+	if len(digits) <= numericStringMaxLen {
+		return s
+	}
+	for i := 0; i < len(digits); i++ {
+		if digits[i] < '0' || digits[i] > '9' {
+			return s
+		}
+	}
+	return "_" + s
+}
+
 // EscapedString returns a JSON-escaped string representation of the value, suitable for logging.
 func EscapedString(value any) string {
 	switch typ := value.(type) {
@@ -365,17 +389,17 @@ func EscapedString(value any) string {
 		value = strings.TrimSpace(typ)
 		// pass through for encoding
 	case uint64:
-		return "\"" + strconv.FormatUint(typ, 10) + "\""
+		return "\"" + prefixLongNumber(strconv.FormatUint(typ, 10)) + "\""
 	case uint32:
 		return strconv.FormatUint(uint64(typ), 10)
 	case uint:
-		return "\"" + strconv.FormatUint(uint64(typ), 10) + "\""
+		return "\"" + prefixLongNumber(strconv.FormatUint(uint64(typ), 10)) + "\""
 	case int64:
-		return "\"" + strconv.FormatInt(typ, 10) + "\""
+		return "\"" + prefixLongNumber(strconv.FormatInt(typ, 10)) + "\""
 	case int32:
 		return strconv.FormatInt(int64(typ), 10)
 	case int:
-		return "\"" + strconv.FormatInt(int64(typ), 10) + "\""
+		return "\"" + prefixLongNumber(strconv.FormatInt(int64(typ), 10)) + "\""
 	case bool:
 		if typ {
 			return "true"
@@ -402,6 +426,12 @@ func EscapedString(value any) string {
 			return fmt.Sprintf(`"%s (%v)"`, en.ValueString(), value)
 		}
 		// pass through for encoding
+	}
+
+	if s, ok := value.(string); ok {
+		if prefixed := prefixLongNumber(s); prefixed != s {
+			value = prefixed
+		}
 	}
 
 	// Create a new buffer for each call to avoid concurrency issues
