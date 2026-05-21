@@ -81,7 +81,7 @@ func Test_NewLogger(t *testing.T) {
 	assert.Equal(t, "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_NewLogger, \"Info log\"\n2021-04-01 00:00:00.000000 E | pkg=xlog_test, func=Test_NewLogger, \"Error log\"\n2021-04-01 00:00:00.000000 N | pkg=xlog_test, func=Test_NewLogger, \"Notice log\"\n2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_NewLogger, \"log log\"\n2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_NewLogger, \"log log\"\n", b.String())
 
 	b.Reset()
-	xlog.GetFormatter().Options(xlog.FormatNoCaller)
+	xlog.GetFormatter().Options(xlog.FormatWithCaller(false))
 	logger.Infof("Info log")
 	logger.Errorf("Error log")
 	logger.Noticef("Notice log")
@@ -113,7 +113,7 @@ func Test_PrettyFormatter(t *testing.T) {
 	}{Foo: "bar"}
 
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "k3", k3)
-	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_PrettyFormatter, k1=\"1\", k2=false, k3={\"Foo\":\"bar\"}\n"
+	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_PrettyFormatter, k1=1, k2=false, k3={\"Foo\":\"bar\"}\n"
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 
@@ -145,16 +145,16 @@ func Test_WithEmpty(t *testing.T) {
 	writer := bufio.NewWriter(&b)
 
 	xlog.SetGlobalLogLevel(xlog.INFO)
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatPrintEmpty))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatPrintEmpty(true)))
 
-	logger.KV(xlog.INFO, "k1", 1, "k2", false, "empty", "", "null", nil)
-	expected := "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=\"1\", k2=false, empty=\"\", null=null\n"
+	logger.KV(xlog.INFO, "k1", 1, "k2", false, "empty", "", "null", nil, "xint64", int64(-9007199254740991), "xuint64", uint64(9007199254740991))
+	expected := "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=1, k2=false, empty=\"\", null=null, xint64=\"_-9007199254740991\", xuint64=\"_9007199254740991\"\n"
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 
 	xlog.SetFormatter(xlog.NewPrettyFormatter(writer))
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "empty", "", "null", nil)
-	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=\"1\", k2=false\n"
+	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=1, k2=false\n"
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 }
@@ -183,7 +183,7 @@ func Test_WithTracedError(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatNoCaller))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller(false)))
 
 	prefixLen := len(logPrefixFormt)
 	for idx, c := range cases {
@@ -231,7 +231,7 @@ func Test_WithAnnotatedError(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatNoCaller))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller(false)))
 
 	prefixLen := len(logPrefixFormt)
 	for idx, c := range cases {
@@ -279,7 +279,7 @@ func Test_PrettyFormatterDebug(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller(true)))
 	xlog.SetGlobalLogLevel(xlog.INFO)
 
 	logger.Trace("Test trace")
@@ -299,7 +299,7 @@ func Test_PrettyFormatterDebug(t *testing.T) {
 	logger.KV(xlog.INFO, "k1", 1, "k2", false)
 	_ = writer.Flush()
 	result = b.String()
-	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_PrettyFormatterDebug, k1=\"1\", k2=false\n"
+	expected = "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_PrettyFormatterDebug, k1=1, k2=false\n"
 	assert.Equal(t, expected, result)
 	b.Reset()
 
@@ -356,14 +356,14 @@ func Test_StringFormatter(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewStringFormatter(writer).Options(xlog.FormatWithCaller))
+	xlog.SetFormatter(xlog.NewStringFormatter(writer).Options(xlog.FormatWithCaller(true)))
 	xlog.SetGlobalLogLevel(xlog.INFO)
 
 	func() {
 		logger.Infof("Test Info")
 	}()
 	result := b.String()
-	assert.Equal(t, "time=\"2021-04-01T00:00:00Z\" level=I pkg=xlog_test func=Test_StringFormatter.func1 \"Test Info\"\n", result)
+	assert.Equal(t, "time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter.func1 \"Test Info\"\n", result)
 	b.Reset()
 
 	func() {
@@ -371,23 +371,23 @@ func Test_StringFormatter(t *testing.T) {
 		s.log("Test Info")
 	}()
 	result = b.String()
-	assert.Equal(t, "time=\"2021-04-01T00:00:00Z\" level=I pkg=xlog_test func=log \"Test Info\"\n", result)
+	assert.Equal(t, "time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=log \"Test Info\"\n", result)
 	b.Reset()
 
 	logger.Errorf("Test Error")
 	result = b.String()
-	assert.Equal(t, "time=\"2021-04-01T00:00:00Z\" level=E pkg=xlog_test func=Test_StringFormatter \"Test Error\"\n", result)
+	assert.Equal(t, "time=2021-04-01T00:00:00Z level=E pkg=xlog_test func=Test_StringFormatter \"Test Error\"\n", result)
 	b.Reset()
 
 	logger.Warningf("Test Warning")
 	result = b.String()
-	assert.Equal(t, "time=\"2021-04-01T00:00:00Z\" level=W pkg=xlog_test func=Test_StringFormatter \"Test Warning\"\n", result)
+	assert.Equal(t, "time=2021-04-01T00:00:00Z level=W pkg=xlog_test func=Test_StringFormatter \"Test Warning\"\n", result)
 	b.Reset()
 
 	// Debug level is disabled
 	logger.Debugf("Test Debug")
 	result = b.String()
-	assert.Contains(t, "time=\"2021-04-01T00:00:00Z\" level=E pkg=xlog_test func=Test_StringFormatter \"Test Debug\"\n", result)
+	assert.Contains(t, "time=2021-04-01T00:00:00Z level=E pkg=xlog_test func=Test_StringFormatter \"Test Debug\"\n", result)
 	b.Reset()
 
 	xlog.SetGlobalLogLevel(xlog.DEBUG)
@@ -395,7 +395,7 @@ func Test_StringFormatter(t *testing.T) {
 	log2 := logger.WithValues("count", 1)
 	log2.KV(xlog.DEBUG, "level", "debug")
 	result = b.String()
-	expected := "time=\"2021-04-01T00:00:00Z\" level=D pkg=xlog_test func=Test_StringFormatter count=\"1\" level=\"debug\"\n"
+	expected := "time=2021-04-01T00:00:00Z level=D pkg=xlog_test func=Test_StringFormatter count=1 level=\"debug\"\n"
 	assert.Equal(t, expected, result)
 	b.Reset()
 
@@ -408,6 +408,7 @@ func Test_StringFormatter(t *testing.T) {
 		"int", 1, // int
 		"nint", -2, // negative int
 		"uint64", uint64(123456789123456), // int
+		"xuint64", uint64(9007199254740991), // uint64
 		"bool", false,
 		"time", date, // time.Time
 		"updated", updatedAt, // *time.Time
@@ -416,7 +417,7 @@ func Test_StringFormatter(t *testing.T) {
 		"err", withAnnotateError("logs error", 2),
 	)
 	result = b.String()
-	expected = `time="2021-04-01T00:00:00Z" level=I pkg=xlog_test func=Test_StringFormatter count="1" int="1" nint="-2" uint64="123456789123456" bool=false time="2021-04-01T00:00:00Z" updated=null period=2s strings=["s1","s2"] err="annotateError, level=0: originateError: msg=logs error, level=0`
+	expected = `time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 xuint64="_9007199254740991" bool=false time=2021-04-01T00:00:00Z updated=null period=2s strings=["s1","s2"] err="annotateError, level=0: originateError: msg=logs error, level=0`
 	assert.Contains(t, result, expected)
 	b.Reset()
 }
@@ -431,7 +432,7 @@ func Test_ColorFormatterDebug(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatNoCaller, xlog.FormatWithColor))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller(false), xlog.FormatWithColor(true)))
 	xlog.SetGlobalLogLevel(xlog.DEBUG)
 
 	logger.Infof("Test Info")
@@ -441,7 +442,7 @@ func Test_ColorFormatterDebug(t *testing.T) {
 
 	logger.KV(xlog.INFO, "k1", 1, "err", goerrors.New("not found"))
 	_ = writer.Flush()
-	expected = "2021-04-01 00:00:00.000000 \x1b[0;96mI | pkg=xlog_test, k1=\"1\", err=\"not found\"\x1b[0m\n"
+	expected = "2021-04-01 00:00:00.000000 \x1b[0;96mI | pkg=xlog_test, k1=1, err=\"not found\"\x1b[0m\n"
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 
@@ -475,14 +476,14 @@ func Test_WithCaller(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller, xlog.FormatWithColor))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller(true), xlog.FormatWithColor(true)))
 
 	logger.Infof("Test Info")
 	result := b.String()
 	assert.Equal(t, "2021-04-01 00:00:00.000000 \x1b[0;96mI | pkg=xlog_test, func=Test_WithCaller, \"Test Info\"\x1b[0m\n", result)
 	b.Reset()
 
-	xlog.SetFormatter(xlog.NewStringFormatter(writer).Options(xlog.FormatWithCaller, xlog.FormatSkipTime))
+	xlog.SetFormatter(xlog.NewStringFormatter(writer).Options(xlog.FormatWithCaller(true), xlog.FormatSkipTime(true)))
 	logger.Infof("Test Info")
 	_ = writer.Flush()
 	result = b.String()
@@ -494,7 +495,7 @@ func Test_WithJSONError(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewJSONFormatter(writer).Options(xlog.FormatNoCaller))
+	xlog.SetFormatter(xlog.NewJSONFormatter(writer).Options(xlog.FormatWithCaller(false)))
 
 	err := withTracedError("json logger", 1)
 	require.Error(t, err)
@@ -516,7 +517,7 @@ func Test_WithJSON_Context(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewJSONFormatter(writer).Options(xlog.FormatNoCaller, xlog.FormatSkipTime))
+	xlog.SetFormatter(xlog.NewJSONFormatter(writer).Options(xlog.FormatWithCaller(false), xlog.FormatSkipTime(true)))
 
 	ctx := xlog.ContextWithKV(context.Background(), "k2str", "value2", "k1int", 1, "k3strings", []string{"s1", "s2"}, "k4bool", false, "k5nil", nil, "k6empty", "")
 	// update
@@ -555,7 +556,7 @@ func TestErrorsStats(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller))
+	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatWithCaller(true)))
 
 	logger.KV(xlog.ERROR, "err", err)
 	logger.KV(xlog.WARNING, "err", err)

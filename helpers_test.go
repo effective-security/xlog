@@ -40,12 +40,15 @@ func TestFlatten(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			cfg := Config{
+				PrintEmpty: tc.printEmpty,
+			}
 			if tc.wantPanic {
 				require.Panics(t, func() {
-					flatten(tc.printEmpty, tc.kvList...)
+					cfg.flatten(tc.kvList...)
 				})
 			} else {
-				got := flatten(tc.printEmpty, tc.kvList...)
+				got := cfg.flatten(tc.kvList...)
 				assert.Equal(t, tc.want, got)
 			}
 		})

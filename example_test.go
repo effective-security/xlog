@@ -23,19 +23,19 @@ func ExampleStringFormatter() {
 	f := xlog.NewStringFormatter(os.Stdout)
 	xlog.SetFormatter(f)
 
-	list := []string{"item 1", "item 2"}
+	list := []string{"item 1", "item 2"} //nolint:goconst
 	obj := struct {
 		Foo     string
 		Bar     int
 		private string
-	}{"foo", 5, "shout not print"}
+	}{"foo", 5, "shout not print"} //nolint:goconst
 
 	f.Format("format", xlog.WARNING, 1, "string1", "string 2", list, obj)
 	f.FormatKV("format_kv", xlog.WARNING, 1, "key1", "value 2", "key2", 2, "list", list, "obj", obj)
 
 	logger.KV(xlog.ERROR, "reason", "with time, level, caller", "err", errors.New("just a string").Error(), "number", 123)
 
-	f.Options(xlog.FormatWithLocation)
+	f.Options(xlog.FormatWithLocation(true))
 	logger.KV(xlog.ERROR, "reason", "location",
 		"err", errors.New("just a string").Error(),
 		"number", 123,
@@ -43,7 +43,7 @@ func ExampleStringFormatter() {
 		"obj", obj,
 	)
 
-	f.Options(xlog.FormatSkipTime, xlog.FormatSkipLevel, xlog.FormatNoCaller)
+	f.Options(xlog.FormatSkipTime(true), xlog.FormatSkipLevel(true), xlog.FormatWithCaller(false))
 	logger.KV(xlog.ERROR, "reason", "skip time, level, caller",
 		"err", errors.New("just a string").Error(),
 		"number", 123,
@@ -53,11 +53,11 @@ func ExampleStringFormatter() {
 	)
 
 	// Output:
-	// time="2021-04-01T00:00:00Z" level=W pkg=format func=ExampleStringFormatter "string1" "string 2" ["item 1","item 2"] {"Foo":"foo","Bar":5}
-	// time="2021-04-01T00:00:00Z" level=W pkg=format_kv func=ExampleStringFormatter key1="value 2" key2="2" list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
-	// time="2021-04-01T00:00:00Z" level=E pkg=string_formatter func=ExampleStringFormatter prefix="addon" reason="with time, level, caller" err="just a string" number="123"
-	// time="2021-04-01T00:00:00Z" level=E pkg=string_formatter src=example_test.go:39 func=ExampleStringFormatter prefix="addon" reason="location" err="just a string" number="123" list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
-	// pkg=string_formatter src=example_test.go:47 prefix="addon" reason="skip time, level, caller" err="just a string" number="123" list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
+	// time=2021-04-01T00:00:00Z level=W pkg=format func=ExampleStringFormatter "string1" "string 2" ["item 1","item 2"] {"Foo":"foo","Bar":5}
+	// time=2021-04-01T00:00:00Z level=W pkg=format_kv func=ExampleStringFormatter key1="value 2" key2=2 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
+	// time=2021-04-01T00:00:00Z level=E pkg=string_formatter func=ExampleStringFormatter prefix="addon" reason="with time, level, caller" err="just a string" number=123
+	// time=2021-04-01T00:00:00Z level=E pkg=string_formatter src=example_test.go:39 func=ExampleStringFormatter prefix="addon" reason="location" err="just a string" number=123 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
+	// pkg=string_formatter src=example_test.go:47 prefix="addon" reason="skip time, level, caller" err="just a string" number=123 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
 }
 
 func ExamplePrettyFormatter() {
@@ -87,7 +87,7 @@ func ExamplePrettyFormatter() {
 	logger.KV(xlog.TRACE, "option", "with time, level, caller, collor", "key2", 2, "list", list, "obj", obj)
 	logger.KV(xlog.DEBUG, "option", "with time, level, caller, collor", "key2", 2, "list", list, "obj", obj)
 
-	f.Options(xlog.FormatWithLocation)
+	f.Options(xlog.FormatWithLocation(true))
 	logger.KV(xlog.ERROR, "reason", "location",
 		"err", errors.New("just a string").Error(),
 		"number", 123,
@@ -95,7 +95,7 @@ func ExamplePrettyFormatter() {
 		"obj", obj,
 	)
 
-	f.Options(xlog.FormatSkipTime, xlog.FormatSkipLevel, xlog.FormatNoCaller)
+	f.Options(xlog.FormatSkipTime(true), xlog.FormatSkipLevel(true), xlog.FormatWithCaller(false))
 	logger.KV(xlog.ERROR, "reason", "skip time, level, caller",
 		"err", errors.New("just a string").Error(),
 		"number", 123,
@@ -107,14 +107,14 @@ func ExamplePrettyFormatter() {
 
 	// Output:
 	// 2021-04-01 00:00:00.000000 W | pkg=format, func=ExamplePrettyFormatter, "string1", "string 2", ["item 1","item 2"], {"Foo":"foo","Bar":5}
-	// 2021-04-01 00:00:00.000000 D | pkg=format_kv, func=ExamplePrettyFormatter, key1="value 2", key2="2", list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
-	// 2021-04-01 00:00:00.000000 E | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", err="just a string", number="123"
+	// 2021-04-01 00:00:00.000000 D | pkg=format_kv, func=ExamplePrettyFormatter, key1="value 2", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
+	// 2021-04-01 00:00:00.000000 E | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", err="just a string", number=123
 	// 2021-04-01 00:00:00.000000 I | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", float=1.1
-	// 2021-04-01 00:00:00.000000 N | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2="2", list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
-	// 2021-04-01 00:00:00.000000 T | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2="2", list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
-	// 2021-04-01 00:00:00.000000 D | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2="2", list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
-	// 2021-04-01 00:00:00.000000 E | pkg=pretty_formatter, src=example_test.go:91, func=ExamplePrettyFormatter, reason="location", err="just a string", number="123", list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
-	// pkg=pretty_formatter, src=example_test.go:99, reason="skip time, level, caller", err="just a string", number="123", list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
+	// 2021-04-01 00:00:00.000000 N | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
+	// 2021-04-01 00:00:00.000000 T | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
+	// 2021-04-01 00:00:00.000000 D | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
+	// 2021-04-01 00:00:00.000000 E | pkg=pretty_formatter, src=example_test.go:91, func=ExamplePrettyFormatter, reason="location", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
+	// pkg=pretty_formatter, src=example_test.go:99, reason="skip time, level, caller", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 }
 
 func ExampleJSONFormatter() {
@@ -139,7 +139,7 @@ func ExampleJSONFormatter() {
 
 	logger.KV(xlog.ERROR, "reason", "with time, level, caller", "err", errors.New("just a string").Error(), "number", 123)
 
-	f.Options(xlog.FormatWithLocation)
+	f.Options(xlog.FormatWithLocation(true))
 	logger.KV(xlog.ERROR, "reason", "location",
 		"err", errors.New("just a string").Error(),
 		"number", 123,
@@ -147,7 +147,7 @@ func ExampleJSONFormatter() {
 		"obj", obj,
 	)
 
-	f.Options(xlog.FormatSkipTime, xlog.FormatSkipLevel, xlog.FormatNoCaller)
+	f.Options(xlog.FormatSkipTime(true), xlog.FormatSkipLevel(true), xlog.FormatWithCaller(false))
 	logger.KV(xlog.ERROR, "reason", "skip time, level, caller",
 		"err", errors.New("just a string").Error(),
 		"number", 123,
@@ -173,5 +173,5 @@ func ExampleContextWithKV() {
 	logger.ContextKV(ctx, xlog.INFO, "k3", 3)
 
 	// Output:
-	// time="2021-04-01T00:00:00Z" level=I pkg=string_formatter func=ExampleContextWithKV key1="1" key2="val2" k3="3"
+	// time=2021-04-01T00:00:00Z level=I pkg=string_formatter func=ExampleContextWithKV key1=1 key2="val2" k3=3
 }
