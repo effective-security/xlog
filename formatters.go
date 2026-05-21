@@ -29,26 +29,6 @@ import (
 	"time"
 )
 
-// FormatterOption specifies additional formatter options
-type FormatterOption int
-
-const (
-	// FormatWithCaller allows to configure if the caller shall be logged
-	FormatWithCaller FormatterOption = iota + 1
-	// FormatNoCaller disables log the caller
-	FormatNoCaller
-	// FormatSkipTime allows to configure skipping the time log
-	FormatSkipTime
-	// FormatSkipLevel allows to configure skipping the level log
-	FormatSkipLevel
-	// FormatWithLocation allows to print the file:line for each log
-	FormatWithLocation
-	// FormatWithColor allows to print color logs
-	FormatWithColor
-	// FormatPrintEmpty allows to print empty values
-	FormatPrintEmpty
-)
-
 // Formatter defines an interface for formatting logs
 type Formatter interface {
 	// Format log entry string to the stream,
@@ -66,35 +46,33 @@ type Formatter interface {
 // TimeNowFn returns the current time; it may be overridden in tests for deterministic behavior.
 var TimeNowFn = time.Now
 
-var MaxLogMessageLength = 2 * 1024
-
 // NewStringFormatter returns string-based formatter
 func NewStringFormatter(w io.Writer) Formatter {
 	return &StringFormatter{
 		w: bufio.NewWriter(w),
-		config: config{
-			withCaller: true,
-			skipTime:   false,
+		Config: Config{
+			WithCaller: true,
+			SkipTime:   false,
 		},
 	}
 }
 
 // StringFormatter defines string-based formatter
 type StringFormatter struct {
-	config
+	Config
 	w *bufio.Writer
 }
 
 // Options allows to configure formatter behavior
 func (s *StringFormatter) Options(ops ...FormatterOption) Formatter {
-	s.options(ops)
+	s.Apply(ops...)
 	return s
 }
 
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
 func (s *StringFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...any) {
-	s.format(pkg, l, depth+1, false, flatten(s.printEmpty, entries...)...)
+	s.format(pkg, l, depth+1, false, s.flatten(entries...)...)
 }
 
 // Format log entry string to the stream
@@ -103,13 +81,13 @@ func (s *StringFormatter) Format(pkg string, l LogLevel, depth int, entries ...a
 }
 
 func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...any) {
-	if !s.skipTime {
+	if !s.SkipTime {
 		now := TimeNowFn().UTC()
-		_, _ = s.w.WriteString("time=\"")
+		_, _ = s.w.WriteString("time=")
 		_, _ = s.w.WriteString(now.Format(time.RFC3339))
-		_, _ = s.w.WriteString("\" ")
+		_, _ = s.w.WriteString(" ")
 	}
-	if !s.skipLevel {
+	if !s.SkipLevel {
 		_, _ = s.w.WriteString("level=")
 		_, _ = s.w.WriteString(l.Char())
 		_ = s.w.WriteByte(' ')
@@ -119,10 +97,10 @@ func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		pkg:          pkg,
 		separator:    " ",
 		depth:        depth + 1,
-		withCaller:   s.withCaller,
-		withLocation: s.withLocation,
+		withCaller:   s.WithCaller,
+		withLocation: s.WithLocation,
 		escape:       escape,
-		printEmpty:   s.printEmpty,
+		printEmpty:   s.PrintEmpty,
 	}
 	writeEntries(s.w, &params, entries...)
 	s.Flush()
@@ -198,31 +176,31 @@ func (s *StringFormatter) Flush() {
 func NewPrettyFormatter(w io.Writer) Formatter {
 	return &PrettyFormatter{
 		w: bufio.NewWriter(w),
-		config: config{
-			withCaller:   true,
-			skipTime:     false,
-			withLocation: false,
-			color:        false,
+		Config: Config{
+			WithCaller:   true,
+			SkipTime:     false,
+			WithLocation: false,
+			WithColor:    false,
 		},
 	}
 }
 
 // PrettyFormatter provides default logs format
 type PrettyFormatter struct {
-	config
+	Config
 	w *bufio.Writer
 }
 
 // Options allows to configure formatter behavior
 func (c *PrettyFormatter) Options(ops ...FormatterOption) Formatter {
-	c.options(ops)
+	c.Apply(ops...)
 	return c
 }
 
 // FormatKV log entry string to the stream,
 // the entries are key/value pairs
 func (c *PrettyFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...any) {
-	c.format(pkg, l, depth+1, false, flatten(c.printEmpty, entries...)...)
+	c.format(pkg, l, depth+1, false, c.flatten(entries...)...)
 }
 
 // Format log entry string to the stream
@@ -232,17 +210,17 @@ func (c *PrettyFormatter) Format(pkg string, l LogLevel, depth int, entries ...a
 
 // Format log entry string to the stream
 func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...any) {
-	if !c.skipTime {
+	if !c.SkipTime {
 		now := TimeNowFn()
 		ts := now.Format("2006-01-02 15:04:05")
 		_, _ = c.w.WriteString(ts)
 		ms := now.Nanosecond() / 1000
 		_, _ = fmt.Fprintf(c.w, ".%06d ", ms)
 	}
-	if c.color {
+	if c.WithColor {
 		_, _ = c.w.Write(LevelColors[l])
 	}
-	if !c.skipLevel {
+	if !c.SkipLevel {
 		_, _ = c.w.WriteString(l.Char())
 		_, _ = c.w.WriteString(" | ")
 	}
@@ -250,11 +228,11 @@ func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		pkg:          pkg,
 		separator:    ", ",
 		depth:        depth + 1,
-		withCaller:   c.withCaller,
-		withLocation: c.withLocation,
+		withCaller:   c.WithCaller,
+		withLocation: c.WithLocation,
 		escape:       escape,
-		colorOff:     c.color,
-		printEmpty:   c.printEmpty,
+		colorOff:     c.WithColor,
+		printEmpty:   c.PrintEmpty,
 	}
 
 	writeEntries(c.w, &params, entries...)
@@ -320,7 +298,7 @@ func (*NilFormatter) Flush() {
 	// noop
 }
 
-func flatten(printEmpty bool, kvList ...any) []any {
+func (c *Config) flatten(kvList ...any) []any {
 	size := len(kvList)
 	list := make([]any, 0, size/2)
 
@@ -333,13 +311,17 @@ func flatten(printEmpty bool, kvList ...any) []any {
 		if i+1 < size {
 			v = kvList[i+1]
 		}
-		if v == nil && !printEmpty {
+		if v == nil && !c.PrintEmpty {
 			continue
 		}
 		val := EscapedString(v)
-		if val != `""` || printEmpty {
-			if len(val) > MaxLogMessageLength {
-				val = val[:MaxLogMessageLength] + "...\""
+		if val != `""` || c.PrintEmpty {
+			if c.MaxLogLength > 0 && len(val) > c.MaxLogLength {
+				if val[0] == '"' {
+					val = val[:c.MaxLogLength] + "...\""
+				} else {
+					val = val[:c.MaxLogLength] + "..."
+				}
 			}
 			list = append(list, k+"="+val)
 			j++
@@ -352,11 +334,29 @@ type WithValueString interface {
 	ValueString() string
 }
 
+// EscapedInt64 returns a string suitable for logging.
+func EscapedInt64(value int64) string {
+	if value <= -9007199254740991 || value >= 9007199254740991 {
+		return "\"_" + strconv.FormatInt(value, 10) + "\""
+	}
+	return strconv.FormatInt(value, 10)
+}
+
+// EscapedUInt64 returns a string suitable for logging.
+func EscapedUInt64(value uint64) string {
+	// JavaScript max number (9007199254740991) exceeding 15 digits
+	if value >= 9007199254740991 {
+		return "\"_" + strconv.FormatUint(value, 10) + "\""
+	}
+	return strconv.FormatUint(value, 10)
+}
+
 // EscapedString returns a JSON-escaped string representation of the value, suitable for logging.
 func EscapedString(value any) string {
 	switch typ := value.(type) {
 	case error:
 		value = fmt.Sprintf("%+v", typ)
+		// pass through for encoding
 	case time.Duration:
 		return typ.String()
 	case json.RawMessage:
@@ -365,17 +365,17 @@ func EscapedString(value any) string {
 		value = strings.TrimSpace(typ)
 		// pass through for encoding
 	case uint64:
-		return "\"" + strconv.FormatUint(typ, 10) + "\""
+		return EscapedUInt64(typ)
 	case uint32:
 		return strconv.FormatUint(uint64(typ), 10)
 	case uint:
-		return "\"" + strconv.FormatUint(uint64(typ), 10) + "\""
+		return EscapedUInt64(uint64(typ))
 	case int64:
-		return "\"" + strconv.FormatInt(typ, 10) + "\""
+		return EscapedInt64(typ)
 	case int32:
 		return strconv.FormatInt(int64(typ), 10)
 	case int:
-		return "\"" + strconv.FormatInt(int64(typ), 10) + "\""
+		return EscapedInt64(int64(typ))
 	case bool:
 		if typ {
 			return "true"
@@ -385,14 +385,14 @@ func EscapedString(value any) string {
 		return "\"" + base64.StdEncoding.EncodeToString(typ) + "\""
 	case reflect.Type:
 		value = typ.String()
+		// pass through for encoding
 	case time.Time:
-		return "\"" + typ.UTC().Format(time.RFC3339) + "\""
+		return typ.UTC().Format(time.RFC3339)
 	case *time.Time:
 		if typ == nil {
 			return "null"
 		}
-		return "\"" + typ.UTC().Format(time.RFC3339) + "\""
-		// pass through for encoding
+		return typ.UTC().Format(time.RFC3339)
 	case fmt.Stringer:
 		value = strings.TrimSpace(typ.String())
 		// pass through for encoding
@@ -455,35 +455,4 @@ func removePart(val, open, close string) string {
 		return b
 	}
 	return b + c
-}
-
-type config struct {
-	withCaller   bool
-	skipTime     bool
-	skipLevel    bool
-	printEmpty   bool
-	withLocation bool
-	color        bool
-}
-
-// Options allows to configure formatter behavior
-func (c *config) options(ops []FormatterOption) {
-	for _, op := range ops {
-		switch op {
-		case FormatWithCaller:
-			c.withCaller = true
-		case FormatNoCaller:
-			c.withCaller = false
-		case FormatSkipTime:
-			c.skipTime = true
-		case FormatSkipLevel:
-			c.skipLevel = true
-		case FormatWithLocation:
-			c.withLocation = true
-		case FormatWithColor:
-			c.color = true
-		case FormatPrintEmpty:
-			c.printEmpty = true
-		}
-	}
 }

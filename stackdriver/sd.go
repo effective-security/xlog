@@ -54,7 +54,7 @@ var MaxLogMessageLength = 2 * 1024
 
 // formatter provides logs format for StackDriver
 type formatter struct {
-	config
+	xlog.Config
 	w       *bufio.Writer
 	logName string
 }
@@ -65,16 +65,16 @@ func NewFormatter(w io.Writer, logName string) xlog.Formatter {
 	return &formatter{
 		w:       bufio.NewWriter(w),
 		logName: logName,
-		config: config{
-			withCaller: true,
-			skipTime:   false,
+		Config: xlog.Config{
+			WithCaller: true,
+			SkipTime:   false,
 		},
 	}
 }
 
 // Options allows to configure formatter behavior
 func (c *formatter) Options(ops ...xlog.FormatterOption) xlog.Formatter {
-	c.options(ops)
+	c.Apply(ops...)
 	return c
 }
 
@@ -82,7 +82,7 @@ func (c *formatter) Options(ops ...xlog.FormatterOption) xlog.Formatter {
 // the entries are key/value pairs
 func (c *formatter) FormatKV(pkg string, level xlog.LogLevel, depth int, entries ...any) {
 	obj := &kventries{
-		printEmpty: c.printEmpty,
+		printEmpty: c.PrintEmpty,
 		entries:    entries,
 	}
 	c.format(pkg, level, depth+1, obj)
@@ -101,7 +101,7 @@ func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj *kventrie
 
 	if obj == nil {
 		obj = &kventries{
-			printEmpty: c.printEmpty,
+			printEmpty: c.PrintEmpty,
 		}
 	}
 
@@ -124,12 +124,12 @@ func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj *kventrie
 		},
 	}
 
-	if !c.skipTime {
+	if !c.SkipTime {
 		ee.Time = xlog.TimeNowFn().UTC().Format(time.RFC3339)
 	}
 
-	if c.withCaller {
-		if c.debug || l <= xlog.ERROR {
+	if c.WithCaller {
+		if c.WithLocation || l <= xlog.ERROR {
 			ee.Source.FilePath = path.Base(file)
 			ee.Source.LineNumber = line
 		}
@@ -196,31 +196,6 @@ func callerName(depth int) (string, string, int) {
 		return name, file, line
 	}
 	return "n/a", file, line
-}
-
-type config struct {
-	withCaller bool
-	skipTime   bool
-	debug      bool
-	printEmpty bool
-}
-
-// Options allows to configure formatter behavior
-func (c *config) options(ops []xlog.FormatterOption) {
-	for _, op := range ops {
-		switch op {
-		case xlog.FormatWithCaller:
-			c.withCaller = true
-		case xlog.FormatNoCaller:
-			c.withCaller = false
-		case xlog.FormatSkipTime:
-			c.skipTime = true
-		case xlog.FormatWithLocation:
-			c.debug = true
-		case xlog.FormatPrintEmpty:
-			c.printEmpty = true
-		}
-	}
 }
 
 func removePart(val, open, close string) string {

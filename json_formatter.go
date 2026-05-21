@@ -26,11 +26,11 @@ import (
 func NewJSONFormatter(w io.Writer) Formatter {
 	f := &JSONFormatter{
 		w: bufio.NewWriter(w),
-		config: config{
-			withCaller:   true,
-			skipTime:     false,
-			withLocation: false,
-			color:        false,
+		Config: Config{
+			WithCaller:   true,
+			SkipTime:     false,
+			WithLocation: false,
+			WithColor:    false,
 		},
 	}
 	f.encoder = json.NewEncoder(f.w)
@@ -40,14 +40,14 @@ func NewJSONFormatter(w io.Writer) Formatter {
 
 // JSONFormatter formats log entries as JSON objects.
 type JSONFormatter struct {
-	config
+	Config
 	w       *bufio.Writer
 	encoder *json.Encoder
 }
 
 // Options allows to configure formatter behavior
 func (c *JSONFormatter) Options(ops ...FormatterOption) Formatter {
-	c.options(ops)
+	c.Apply(ops...)
 	return c
 }
 
@@ -55,41 +55,41 @@ func (c *JSONFormatter) Options(ops ...FormatterOption) Formatter {
 // the entries are key/value pairs
 func (c *JSONFormatter) FormatKV(pkg string, l LogLevel, depth int, entries ...any) {
 	m := kvToMap(entries...)
-	c.format(pkg, l, depth+1, false, m)
+	c.format(pkg, l, depth+1, m)
 }
 
 // Format log entry string to the stream
 func (c *JSONFormatter) Format(pkg string, l LogLevel, depth int, entries ...any) {
-	c.format(pkg, l, depth+1, true, map[string]any{}, entries...)
+	c.format(pkg, l, depth+1, map[string]any{}, entries...)
 }
 
 // Format log entry string to the stream
-func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, escape bool, kv map[string]any, entries ...any) {
-	if !c.skipTime {
+func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, kv map[string]any, entries ...any) {
+	if !c.SkipTime {
 		now := TimeNowFn().UTC()
 		kv["time"] = now.Format(time.RFC3339)
 	}
-	if !c.skipLevel {
+	if !c.SkipLevel {
 		kv["level"] = l.Char()
 	}
 	if pkg != "" {
 		kv["pkg"] = pkg
 	}
 
-	if l == ERROR || c.withLocation || c.withCaller {
+	if l == ERROR || c.WithLocation || c.WithCaller {
 		caller, file, line := Caller(depth + 1)
-		if l == ERROR || c.withLocation {
+		if l == ERROR || c.WithLocation {
 			kv["src"] = fmt.Sprintf("%s:%d", file, line)
 		}
-		if l == ERROR || c.withCaller {
+		if l == ERROR || c.WithCaller {
 			kv["func"] = caller
 		}
 	}
 
 	if len(entries) > 0 {
 		msg := fmt.Sprint(entries...)
-		if len(msg) > MaxLogMessageLength {
-			msg = msg[:MaxLogMessageLength]
+		if c.MaxLogLength > 0 && len(msg) > c.MaxLogLength {
+			msg = msg[:c.MaxLogLength]
 		}
 		kv["msg"] = msg
 	}
