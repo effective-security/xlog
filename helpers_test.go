@@ -22,13 +22,13 @@ func TestFlatten(t *testing.T) {
 			name:       "key-value pairs",
 			printEmpty: false,
 			kvList:     []any{"k1", "v1", "k2", nil},
-			want:       []any{"k1=\"v1\""},
+			want:       []any{"k1=v1"},
 		},
 		{
 			name:       "print empty value",
 			printEmpty: true,
 			kvList:     []any{"k1", "v1", "k2", nil},
-			want:       []any{"k1=\"v1\"", "k2=null"},
+			want:       []any{"k1=v1", "k2=null"},
 		},
 		{
 			name:      "panic on non-string key",

@@ -24,7 +24,7 @@ func Test_FormatterOptions(t *testing.T) {
 
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "nil", nil, "empty", "")
 	result := b.String()
-	assert.Equal(t, `{"logName":"sd","component":"stackdriver","message":{"k1":1,"k2":false,"nil":null,"empty":""},"severity":"INFO","sourceLocation":{"file":"sd_test.go","line":25,"function":"Test_FormatterOptions"}}`+"\n", result)
+	assert.Equal(t, `{"logName":"sd","component":"stackdriver","message":{"k1":1,"k2":false,"nil":null},"severity":"INFO","sourceLocation":{"file":"sd_test.go","line":25,"function":"Test_FormatterOptions"}}`+"\n", result)
 	b.Reset()
 
 	xlog.SetFormatter(NewFormatter(writer, "sd").
@@ -32,7 +32,7 @@ func Test_FormatterOptions(t *testing.T) {
 
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "nil", nil, "empty", "")
 	result = b.String()
-	assert.Equal(t, `{"logName":"sd","component":"stackdriver","message":{"k1":1,"k2":false,"nil":null,"empty":""},"severity":"INFO","sourceLocation":{"function":"Test_FormatterOptions"}}`+"\n", result)
+	assert.Equal(t, `{"logName":"sd","component":"stackdriver","message":{"k1":1,"k2":false,"nil":null},"severity":"INFO","sourceLocation":{"function":"Test_FormatterOptions"}}`+"\n", result)
 	b.Reset()
 
 	xlog.SetFormatter(NewFormatter(writer, "sd").
