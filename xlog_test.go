@@ -148,7 +148,7 @@ func Test_WithEmpty(t *testing.T) {
 	xlog.SetFormatter(xlog.NewPrettyFormatter(writer).Options(xlog.FormatPrintEmpty(true)))
 
 	logger.KV(xlog.INFO, "k1", 1, "k2", false, "empty", "", "null", nil, "xint64", int64(-9007199254740991), "xuint64", uint64(9007199254740991))
-	expected := "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=1, k2=false, empty=\"\", null=null, xint64=\"_-9007199254740991\", xuint64=\"_9007199254740991\"\n"
+	expected := "2021-04-01 00:00:00.000000 I | pkg=xlog_test, func=Test_WithEmpty, k1=1, k2=false, empty=, null=null, xint64=_-9007199254740991, xuint64=_9007199254740991\n"
 	assert.Equal(t, expected, b.String())
 	b.Reset()
 
@@ -395,7 +395,7 @@ func Test_StringFormatter(t *testing.T) {
 	log2 := logger.WithValues("count", 1)
 	log2.KV(xlog.DEBUG, "level", "debug")
 	result = b.String()
-	expected := "time=2021-04-01T00:00:00Z level=D pkg=xlog_test func=Test_StringFormatter count=1 level=\"debug\"\n"
+	expected := "time=2021-04-01T00:00:00Z level=D pkg=xlog_test func=Test_StringFormatter count=1 level=debug\n"
 	assert.Equal(t, expected, result)
 	b.Reset()
 
@@ -417,8 +417,9 @@ func Test_StringFormatter(t *testing.T) {
 		"err", withAnnotateError("logs error", 2),
 	)
 	result = b.String()
-	expected = `time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 xuint64="_9007199254740991" bool=false time=2021-04-01T00:00:00Z updated=null period=2s strings=["s1","s2"] err="annotateError, level=0: originateError: msg=logs error, level=0`
-	assert.Contains(t, result, expected)
+	expected = `time=2021-04-01T00:00:00Z level=I pkg=xlog_test func=Test_StringFormatter count=1 int=1 nint=-2 uint64=123456789123456 xuint64=_9007199254740991 bool=false time=2021-04-01T00:00:00Z updated=null period=2s strings=["s1","s2"] err="annotateError, level=0: originateError: msg=logs error, level=0`
+	require.Greater(t, len(result), len(expected))
+	assert.Equal(t, expected, result[:len(expected)])
 	b.Reset()
 }
 

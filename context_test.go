@@ -36,6 +36,6 @@ func Test_WithContext(t *testing.T) {
 
 	logger.ContextKV(ctx, xlog.INFO, "k3", 3, "k4", uint64(9007199254740991))
 	result := b.String()
-	assert.Equal(t, "2021-04-01 00:00:00.000000 \x1b[0;96mI | pkg=xlog_test, func=Test_WithContext, key1=1, key2=\"val2\", k3=3, k4=\"_9007199254740991\"\x1b[0m\n", result)
+	assert.Equal(t, "2021-04-01 00:00:00.000000 \x1b[0;96mI | pkg=xlog_test, func=Test_WithContext, key1=1, key2=val2, k3=3, k4=_9007199254740991\x1b[0m\n", result)
 	b.Reset()
 }

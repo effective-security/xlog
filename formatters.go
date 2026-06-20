@@ -26,6 +26,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -315,7 +316,7 @@ func (c *Config) flatten(kvList ...any) []any {
 			continue
 		}
 		val := EscapedString(v)
-		if val != `""` || c.PrintEmpty {
+		if c.PrintEmpty || (val != `""` && val != "") {
 			if c.MaxLogLength > 0 && len(val) > c.MaxLogLength {
 				if val[0] == '"' {
 					val = val[:c.MaxLogLength] + "...\""
@@ -337,33 +338,92 @@ type WithValueString interface {
 // EscapedInt64 returns a string suitable for logging.
 func EscapedInt64(value int64) string {
 	if value <= -9007199254740991 || value >= 9007199254740991 {
-		return "\"_" + strconv.FormatInt(value, 10) + "\""
+		return "_" + strconv.FormatInt(value, 10)
 	}
 	return strconv.FormatInt(value, 10)
 }
 
+const (
+	min64NumberLen = 16 // len(9007199254740991)
+	max64NumberLen = 19 // len(9007199254740991)
+)
+
 // EscapedUInt64 returns a string suitable for logging.
 func EscapedUInt64(value uint64) string {
+	str := strconv.FormatUint(value, 10)
 	// JavaScript max number (9007199254740991) exceeding 15 digits
 	if value >= 9007199254740991 {
-		return "\"_" + strconv.FormatUint(value, 10) + "\""
+		str = "_" + str
 	}
-	return strconv.FormatUint(value, 10)
+	return str
+}
+
+// jsonEscaper bundles a reusable buffer with its JSON encoder so both can be
+// pooled together, avoiding an allocation per call for each.
+type jsonEscaper struct {
+	buf bytes.Buffer
+	enc *json.Encoder
+}
+
+// maxPooledBufferSize caps the size of buffers we are willing to keep in the
+// pool. Encoding an unusually large value should not pin a large buffer in
+// memory for the lifetime of the process.
+const maxPooledBufferSize = 64 << 10 // 64 KiB
+
+var escaperPool = sync.Pool{
+	New: func() any {
+		e := &jsonEscaper{}
+		e.enc = json.NewEncoder(&e.buf)
+		e.enc.SetEscapeHTML(false)
+		return e
+	},
+}
+
+// jsonEncode encodes value as JSON (without HTML escaping) using a pooled
+// buffer/encoder. It is safe for concurrent use: each call obtains its own
+// escaper from the pool, and the returned string is a copy independent of the
+// pooled buffer, so the buffer can be safely reset and reused afterwards.
+func jsonEncode(value any) string {
+	e := escaperPool.Get().(*jsonEscaper)
+	e.buf.Reset()
+	// json.Encoder.Encode appends a trailing newline, hence the TrimSpace.
+	_ = e.enc.Encode(value)
+	out := strings.TrimSpace(e.buf.String())
+
+	// Avoid retaining oversized buffers in the pool.
+	if e.buf.Cap() <= maxPooledBufferSize {
+		escaperPool.Put(e)
+	}
+	return out
+}
+
+func escapeString(value string) string {
+	s := strings.TrimSpace(value)
+	size := len(s)
+	if size > 2 && s[0] == '"' && s[size-1] == '"' {
+		s = s[1 : size-1]
+		size -= 2
+	}
+	if size >= min64NumberLen && size <= max64NumberLen && isNumber(s) && s >= "9007199254740991" {
+		return "_" + s
+	}
+	if needsEncoding(s) {
+		return jsonEncode(s)
+	}
+	return s
 }
 
 // EscapedString returns a JSON-escaped string representation of the value, suitable for logging.
 func EscapedString(value any) string {
 	switch typ := value.(type) {
 	case error:
-		value = fmt.Sprintf("%+v", typ)
-		// pass through for encoding
+		return escapeString(fmt.Sprintf("%+v", typ))
 	case time.Duration:
 		return typ.String()
 	case json.RawMessage:
 		return string(typ)
 	case string:
-		value = strings.TrimSpace(typ)
-		// pass through for encoding
+		return escapeString(typ)
 	case uint64:
 		return EscapedUInt64(typ)
 	case uint32:
@@ -384,8 +444,7 @@ func EscapedString(value any) string {
 	case []byte:
 		return "\"" + base64.StdEncoding.EncodeToString(typ) + "\""
 	case reflect.Type:
-		value = typ.String()
-		// pass through for encoding
+		return escapeString(typ.String())
 	case time.Time:
 		return typ.UTC().Format(time.RFC3339)
 	case *time.Time:
@@ -394,8 +453,7 @@ func EscapedString(value any) string {
 		}
 		return typ.UTC().Format(time.RFC3339)
 	case fmt.Stringer:
-		value = strings.TrimSpace(typ.String())
-		// pass through for encoding
+		return escapeString(typ.String())
 	default:
 		// Handle proto enums
 		if en, ok := value.(WithValueString); ok {
@@ -404,12 +462,7 @@ func EscapedString(value any) string {
 		// pass through for encoding
 	}
 
-	// Create a new buffer for each call to avoid concurrency issues
-	var buffer bytes.Buffer
-	encoder := json.NewEncoder(&buffer)
-	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(value)
-	return strings.TrimSpace(buffer.String())
+	return jsonEncode(value)
 }
 
 // Caller returns the function name, file, and line number of the caller at the given depth.
@@ -455,4 +508,22 @@ func removePart(val, open, close string) string {
 		return b
 	}
 	return b + c
+}
+
+func isNumber(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func needsEncoding(s string) bool {
+	for i, c := range s {
+		if i > 32 || c == ' ' || c == '\n' || c == '\t' || c == '[' || c == '{' || c == '(' || c == '`' || c == '"' || c == '\'' || c == '*' || c == '\\' || c == ':' || c == '/' {
+			return true
+		}
+	}
+	return false
 }

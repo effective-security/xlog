@@ -53,11 +53,11 @@ func ExampleStringFormatter() {
 	)
 
 	// Output:
-	// time=2021-04-01T00:00:00Z level=W pkg=format func=ExampleStringFormatter "string1" "string 2" ["item 1","item 2"] {"Foo":"foo","Bar":5}
+	// time=2021-04-01T00:00:00Z level=W pkg=format func=ExampleStringFormatter string1 "string 2" ["item 1","item 2"] {"Foo":"foo","Bar":5}
 	// time=2021-04-01T00:00:00Z level=W pkg=format_kv func=ExampleStringFormatter key1="value 2" key2=2 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
-	// time=2021-04-01T00:00:00Z level=E pkg=string_formatter func=ExampleStringFormatter prefix="addon" reason="with time, level, caller" err="just a string" number=123
-	// time=2021-04-01T00:00:00Z level=E pkg=string_formatter src=example_test.go:39 func=ExampleStringFormatter prefix="addon" reason="location" err="just a string" number=123 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
-	// pkg=string_formatter src=example_test.go:47 prefix="addon" reason="skip time, level, caller" err="just a string" number=123 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
+	// time=2021-04-01T00:00:00Z level=E pkg=string_formatter func=ExampleStringFormatter prefix=addon reason="with time, level, caller" err="just a string" number=123
+	// time=2021-04-01T00:00:00Z level=E pkg=string_formatter src=example_test.go:39 func=ExampleStringFormatter prefix=addon reason=location err="just a string" number=123 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
+	// pkg=string_formatter src=example_test.go:47 prefix=addon reason="skip time, level, caller" err="just a string" number=123 list=["item 1","item 2"] obj={"Foo":"foo","Bar":5}
 }
 
 func ExamplePrettyFormatter() {
@@ -106,14 +106,14 @@ func ExamplePrettyFormatter() {
 	)
 
 	// Output:
-	// 2021-04-01 00:00:00.000000 W | pkg=format, func=ExamplePrettyFormatter, "string1", "string 2", ["item 1","item 2"], {"Foo":"foo","Bar":5}
+	// 2021-04-01 00:00:00.000000 W | pkg=format, func=ExamplePrettyFormatter, string1, "string 2", ["item 1","item 2"], {"Foo":"foo","Bar":5}
 	// 2021-04-01 00:00:00.000000 D | pkg=format_kv, func=ExamplePrettyFormatter, key1="value 2", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 	// 2021-04-01 00:00:00.000000 E | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", err="just a string", number=123
 	// 2021-04-01 00:00:00.000000 I | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", float=1.1
 	// 2021-04-01 00:00:00.000000 N | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 	// 2021-04-01 00:00:00.000000 T | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 	// 2021-04-01 00:00:00.000000 D | pkg=pretty_formatter, func=ExamplePrettyFormatter, option="with time, level, caller, collor", key2=2, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
-	// 2021-04-01 00:00:00.000000 E | pkg=pretty_formatter, src=example_test.go:91, func=ExamplePrettyFormatter, reason="location", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
+	// 2021-04-01 00:00:00.000000 E | pkg=pretty_formatter, src=example_test.go:91, func=ExamplePrettyFormatter, reason=location, err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 	// pkg=pretty_formatter, src=example_test.go:99, reason="skip time, level, caller", err="just a string", number=123, list=["item 1","item 2"], obj={"Foo":"foo","Bar":5}
 }
 
@@ -168,10 +168,10 @@ func ExampleContextWithKV() {
 	f := xlog.NewStringFormatter(os.Stdout)
 	xlog.SetFormatter(f)
 
-	ctx := xlog.ContextWithKV(context.Background(), "key1", 1, "key2", "val2")
+	ctx := xlog.ContextWithKV(context.Background(), "key1", 1, "key2", "val2", "key3", nil)
 
-	logger.ContextKV(ctx, xlog.INFO, "k3", 3)
+	logger.ContextKV(ctx, xlog.INFO, "k3", 3, "k4", "")
 
 	// Output:
-	// time=2021-04-01T00:00:00Z level=I pkg=string_formatter func=ExampleContextWithKV key1=1 key2="val2" k3=3
+	// time=2021-04-01T00:00:00Z level=I pkg=string_formatter func=ExampleContextWithKV key1=1 key2=val2 k3=3
 }

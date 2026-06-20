@@ -246,11 +246,13 @@ func (o *kventries) MarshalJSON() (out []byte, err error) {
 			return nil, err
 		}
 		val := xlog.EscapedString(v)
-		out = append(out, key...)
-		out = append(out, ':')
-		out = append(out, val...)
-		out = append(out, ',')
-		lastComma = true
+		if val != "" {
+			out = append(out, key...)
+			out = append(out, ':')
+			out = append(out, val...)
+			out = append(out, ',')
+			lastComma = true
+		}
 	}
 	if lastComma {
 		// replace last ',' with '}'
