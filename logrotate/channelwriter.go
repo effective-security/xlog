@@ -41,7 +41,7 @@ type ChannelWriter struct {
 // dest is the io.Writer that we're wrapping
 // bufferDepth controls the size of the channel buffer (if this buffer fills, it'll start to block the writers)
 // flushInterval if the writer is a bufio.Writer (or any other writer with a Flush() error method), then we'll flush at this interval when there are no writes.
-// you can pass zero for this if you don't want this behavour
+// you can pass zero for this if you don't want this behavior
 func NewChannelWriter(dest io.Writer, bufferDepth int, flushInterval time.Duration) *ChannelWriter {
 	cw := ChannelWriter{
 		write:   make(chan []byte, bufferDepth),
