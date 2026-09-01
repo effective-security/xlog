@@ -1,5 +1,3 @@
-[![Coverage Status](https://coveralls.io/repos/github/effective-security/xlog/badge.svg?branch=main)](https://coveralls.io/github/effective-security/xlog?branch=main)
-
 # xlog logging package
 
 Cloned from https://github.com/coreos/pkg/tree/master/capnslog
@@ -37,7 +35,7 @@ logger.KV(xlog.INFO, "version", v1, "any", override)
 Config example:
 
 ```yaml
-log_levels: 
+log_levels:
   - repo: "*"
     level: INFO
   - repo: github.com/effective-security/server
@@ -104,7 +102,7 @@ Still the job of `main` to expose these configurations. `main` may delegate this
 
 `main` activates logging for its repository and any dependency repositories it would also like to have output in its logstream. `main` also dictates at which level each subpackage logs.
 
-### There is *one* output stream, and it is an `io.Writer` composed with a formatter
+### There is _one_ output stream, and it is an `io.Writer` composed with a formatter
 
 Splitting streams is probably not the job of your program, but rather, your log aggregation framework. If you must split output streams, again, `main` configures this and you can write a very simple two-output struct that satisfies io.Writer.
 
@@ -116,10 +114,10 @@ An object knows best how to print itself. Log objects can collect more interesti
 
 ### Log levels have specific meanings:
 
-* `CRITICAL`: Unrecoverable. Must fail.
-* `ERROR`: Data has been lost, a request has failed for a bad reason, or a required resource has been lost
-* `WARNING`: (Hopefully) Temporary conditions that may cause errors, but may work fine. A replica disappearing (that may reconnect) is a warning.
-* `NOTICE`: Normal, but important (uncommon) log information.
-* `INFO`: Normal, working log information, everything is fine, but helpful notices for auditing or common operations.
-* `TRACE`: Anything goes, from logging every function call as part of a common operation, to tracing execution of a query.
-* `DEBUG`: Print debug data.
+- `CRITICAL`: Unrecoverable. Must fail.
+- `ERROR`: Data has been lost, a request has failed for a bad reason, or a required resource has been lost
+- `WARNING`: (Hopefully) Temporary conditions that may cause errors, but may work fine. A replica disappearing (that may reconnect) is a warning.
+- `NOTICE`: Normal, but important (uncommon) log information.
+- `INFO`: Normal, working log information, everything is fine, but helpful notices for auditing or common operations.
+- `TRACE`: Anything goes, from logging every function call as part of a common operation, to tracing execution of a query.
+- `DEBUG`: Print debug data.
