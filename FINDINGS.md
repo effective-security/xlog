@@ -9,19 +9,29 @@ Features and implementation milestones belong in [ROADMAP.md](ROADMAP.md).
 
 | ID   | Severity | Status                         | Issue                                                                                  |
 | ---- | -------- | ------------------------------ | -------------------------------------------------------------------------------------- |
-| F-01 | High     | Open, reproduced               | Stackdriver drops ordinary values and changes string types                             |
-| F-02 | High     | Open, reproduced               | ChannelWriter accepts writes after shutdown; later writes can hang                     |
-| F-03 | High     | Open, source review            | Rotator flush races its worker and never closes the file writer                        |
-| F-04 | High     | Open, source review            | Serialization and sink errors are lost; Close can falsely report success               |
-| F-05 | High     | Open, reproduced               | Derived loggers share fields and retain stale levels; context exposes internal storage |
+| F-01 | High     | Fixed                          | Stackdriver drops ordinary values and changes string types                             |
+| F-02 | High     | Fixed                          | ChannelWriter accepts writes after shutdown; later writes can hang                     |
+| F-03 | High     | Fixed                          | Rotator flush races its worker and never closes the file writer                        |
+| F-04 | High     | Fixed                          | Serialization and sink errors are lost; Close can falsely report success               |
+| F-05 | High     | Fixed                          | Derived loggers share fields and retain stale levels; context exposes internal storage |
 | F-06 | Medium   | Open, reproduced               | Invalid configuration silently disables noncritical logging; defaults do not persist   |
-| F-07 | High     | Open, reproduced/source review | Global lock permits reentrant deadlocks and serializes all sink latency                |
-| F-08 | Medium   | Open, source review            | Flush panics when logging is disabled or unconfigured                                  |
+| F-07 | High     | Partially fixed                | Global lock permits reentrant deadlocks and serializes all sink latency                |
+| F-08 | Medium   | Fixed                          | Flush panics when logging is disabled or unconfigured                                  |
 | F-09 | Medium   | Open, source review            | Length options do not bound memory, queue bytes, or total record size                  |
 | F-10 | Medium   | Open, reproduced/source review | CI/race/coverage checks and test isolation have gaps                                   |
 | F-11 | Medium   | Fixed                          | Windows build excluded a required exported constructor                                 |
 
-## F-01 — Stackdriver silently loses records or changes their meaning
+## F-01 — Stackdriver silently loses records or changes their meaning (fixed)
+
+Fixed: payload values now use JSON serialization rather than text escaping.
+Strings retain type/whitespace, integers retain exact JSON numeric spelling,
+durations/display enums become strings, and JSON marshalers keep control of
+times, RawMessage, and custom representations. Errors without JSON marshalers
+use detailed text. PrintEmpty now retains empty strings as well as nil.
+Unsupported values reject the record and are observable through ErrorFormatter.
+Black-box tests cover these representations and encoding/write/short-write errors.
+
+Original evidence (before the fix):
 
 Owner: [stackdriver/sd.go](stackdriver/sd.go), `kventries.MarshalJSON` and
 `formatter.format`; [formatters.go](formatters.go), `EscapedString`.
@@ -49,27 +59,47 @@ Fix direction: encode values with a JSON serializer, define large-number/error
 representation, and surface serialization failure. Add type-preserving tests
 for strings, enums, durations, times, empty values, RawMessage, and unsupported values.
 
-## F-02 — ChannelWriter has no closed-write admission check
+## F-02 — ChannelWriter has no closed-write admission check (fixed)
 
 Owner: [logrotate/channelwriter.go](logrotate/channelwriter.go), `Write`, `Stop`,
 and `listen`.
 
-After Stop drains and terminates the worker, Write still sends to the open queue.
+Before the fix, Write still sent to the open queue after Stop terminated the worker.
 For a depth-one queue, `cw.Stop(); cw.Write([]byte("lost"))` returned `(4, nil)`
 with `IsStopped()==true`; no worker remained to deliver those bytes. The next
-write blocks indefinitely. Depth zero blocks on the first post-stop write.
-Concurrent Write/Stop can likewise leave accepted writes behind after draining.
+write blocked indefinitely. Depth zero blocked on the first post-stop write.
+Concurrent Write/Stop could likewise leave accepted writes behind after draining.
 
-Only the first Stop caller waits; concurrent subsequent callers can return before
-drain completion. IsStopped reports shutdown initiation, not completion. Typed
-atomic state modernization does not repair these lifecycle semantics.
+Previously, only the first Stop caller waited; concurrent subsequent callers
+could return before drain completion.
 
-Until fixed, quiesce producers before Stop and never reuse the writer. Repair
-requires synchronized admission, a broadcast completion signal, rejection of
-post-close writes, and a flush/drain barrier; tests must coordinate writers and
-shutdown without sleeps. A stalled arbitrary io.Writer remains non-cancellable.
+Fixed by synchronizing queue closure with active senders, broadcasting shutdown
+to blocked writers, draining the closed queue, and broadcasting completion after
+the final flush. New writes after shutdown begins return zero and a wrapped
+`io.ErrClosedPipe`. Overlapping writes may enqueue or fail; every accepted write
+is drained before any Stop caller returns. IsStopped continues to report shutdown
+initiation, not completion. A stalled arbitrary io.Writer remains non-cancellable,
+and destination errors remain tracked separately in F-04.
 
-## F-03 — Rotation shutdown ordering and file ownership are incomplete
+Regression tests in `logrotate/channelwriter_extra_test.go` use `testing/synctest`
+and channel coordination for zero/depth-one queues, blocked producers, concurrent
+Stop callers, final-flush completion, repeated Stop, post-stop writes (including
+empty writes), and concurrent write/shutdown delivery accounting.
+Validation: `make test`, `go test -race ./logrotate -count=20`, and `make lint`
+(zero issues) passed.
+
+## F-03 — Rotation shutdown ordering and file ownership are incomplete (fixed)
+
+Fixed: rotation now installs a removable formatter override that supports
+out-of-order removal and waits for admitted logger calls. Shutdown flushes and
+drains before closing the retained lumberjack writer. The destination wrapper
+serializes buffer access, rejects late writes, and flushes caller-owned extra
+sinks without closing them. Concurrent/repeated Close calls now wait and return
+the same result (the previous repeated-close error contract is replaced).
+Tests cover all four modes, overlap, concurrent close, file ownership, lazy-open
+and sink errors, post-close writes, explicit flushing, and fatal delivery.
+
+Original evidence (before the fix):
 
 Owner: [logrotate/logrotate.go](logrotate/logrotate.go), `Initialize` and `Close`.
 
@@ -91,7 +121,26 @@ errors. Restore the prior formatter through a coordinated handoff. Do not close
 caller-owned extra sinks implicitly. Add tests for all four buffering/sink modes,
 overlap, concurrent close, failed writes, and file-handle release.
 
-## F-04 — Errors and downstream flush guarantees disappear
+## F-04 — Errors and downstream flush guarantees disappear (fixed)
+
+Fixed through additive APIs: built-in output formatters implement ErrorFormatter
+(Err and FlushError), PackageLogger adds FlushError, and FlushFormatter supports
+legacy formatters. The first encoding/write/flush error remains observable even
+after successful later records. ChannelWriter adds Err, Flush barriers, and Close;
+short writes become wrapped io.ErrShortWrite. Rotation Close joins delivery and
+file-close errors, preserving causes it receives. Lumberjack itself formats some
+filesystem causes into strings, so those underlying concrete types remain lost.
+
+Explicit flushing reaches supported downstream buffers and queues. CRITICAL
+records flush before fatal/panic side effects. Flush is delivery, not fsync;
+arbitrary stalled writers can block indefinitely. Legacy void APIs still discard
+the result, and text coercion helpers intentionally retain their documented
+fallback. Normal records retain buffering; unbuffered rotation has no timer,
+so applications needing immediate visibility use FlushError.
+Tests inject encoding/write/short-write/flush/close failures and verify causes,
+queue barriers, and fatal delivery before ExitFunc.
+
+Original evidence (before the fix):
 
 Owners: [formatters.go](formatters.go), [json_formatter.go](json_formatter.go),
 [stackdriver/sd.go](stackdriver/sd.go), and [logrotate](logrotate/logrotate.go).
@@ -117,7 +166,19 @@ Fix direction: add an error-reporting sink/lifecycle API without changing the
 existing Formatter interface in place, make Close preserve causes with
 cockroachdb/errors, and document enqueue versus delivery versus durability.
 
-## F-05 — Derived fields, levels, and context ownership are unsafe
+## F-05 — Derived fields, levels, and context ownership are unsafe (fixed)
+
+Fixed: derived and per-call field slices have independent backing storage.
+Derived loggers reference their registered parent's level under the configuration
+lock, so package/repository/global updates apply immediately to future calls.
+ContextEntries returns a slice snapshot without changing ContextWithKV's shared
+parent/sibling update behavior. Plain and printf calls on derived loggers keep
+persistent fields structured and store the message in msg, without extra brackets.
+Snapshots are shallow; referenced mutable values must remain immutable during
+logging. Regression tests cover branching, per-call overwrite, input mutation,
+live levels, concurrent configuration/derivation, and context mutation isolation.
+
+Original evidence (before the fix):
 
 Owners: [packagelogger.go](packagelogger.go), `WithValues`, `internalLog`,
 `internalLogf`, `ContextKV`; [context.go](context.go), `ContextEntries`.
@@ -172,6 +233,22 @@ define inheritance for new registrations and derived loggers explicitly.
 
 ## F-07 — Reentrancy can deadlock; sink latency blocks every package
 
+Partially fixed: configuration and output use separate locks. ERROR observers
+run outside both locks, even for filtered records; they may query configuration
+or log at other levels. Concurrent observers must synchronize their own state,
+and recursive ERROR calls need a recursion guard. Tests verify callback reentry,
+configuration access from a writer, and filtered/configuration calls completing
+while a destination is blocked. Formatter removal waits for admitted calls before
+sink closure, without holding the configuration lock.
+
+Still open: output is synchronous and serialized. An enabled recursive log from
+a formatter, writer, Stringer, or MarshalJSON implementation can wait on the
+output lock held by its outer call. Slow sinks still block other enabled logging
+calls. These require record/encoder/sink boundaries and an explicit reentrancy
+policy; the current change does not claim to fix them.
+
+Original evidence (before the partial fix):
+
 Owner: [packagelogger.go](packagelogger.go), `internalLog`/`internalLogf`;
 [logmap.go](logmap.go), `loggerStruct` and configuration helpers.
 
@@ -192,7 +269,13 @@ external callbacks outside registry locks, and establish immutable record
 ownership. Preserve formatter safety and output ordering; simply unlocking around
 the current shared bufio.Writer is unsafe. See the buffered-ingress roadmap.
 
-## F-08 — Flush dereferences a nil formatter
+## F-08 — Flush dereferences a nil formatter (fixed)
+
+Fixed: Flush and the new FlushError return normally when the global formatter
+is nil. The formatter lifecycle regression covers disabled output and restoration
+to nil. The same guard handles unconfigured startup state.
+
+Original evidence (before the fix):
 
 Owner: [packagelogger.go](packagelogger.go), `PackageLogger.Flush`.
 
@@ -238,9 +321,10 @@ Owners: [.project/gomod-project.mk](.project/gomod-project.mk),
 - CI reports coverage with strict `> 80` rather than `>= 80`; the reporting shell
   does not explicitly fail the job on low coverage. Whether the separate status
   blocks merging depends on repository branch protection, which was not inspected.
-- `TestInitializeAndClose` mutates global formatter state in a parallel test;
-  other tests do not consistently restore globals. Channel tests poll real time.
-  One rotation test uses a shared fixed temp path instead of t.TempDir.
+- The parallel global mutation in `TestInitializeAndClose` and the fixed rotation
+  temp path are repaired. Older tests still do not consistently restore globals,
+  and original channel tests still poll real time. New concurrency regressions
+  use testing/synctest or channel coordination.
 - Some assertions do not test their stated behavior: Test_StringFormatter checks
   that a literal contains an empty actual result for a disabled log, which passes
   trivially. Prefer exact empty-output assertions.
@@ -275,3 +359,16 @@ statement coverage. Linux tests, Windows amd64 cross-compilation, `make lint`
 (zero issues), and `git diff --check` passed.
 `go fix -diff ./...` reported no remaining modernizer changes. These checks
 validate this change; they do not resolve the open findings.
+
+## High-severity repair validation
+
+F-01, F-03, F-04, and F-05 are fixed, along with F-08. F-07 remains partially
+fixed: observer/configuration deadlocks are repaired, while recursive output and
+enabled-call contention remain open. The existing F-02 fix is retained and its
+queue now supports error reporting and explicit flush barriers.
+
+`make test`, the full race suite with atomic coverage (94.1% total statements),
+20 repeated race-enabled runs of rotation/queue regressions, Windows amd64
+cross-compilation, `make lint` (zero issues), and `git diff --check` passed.
+Windows binaries were compiled, not executed. The checks do not resolve F-06,
+the remaining F-07 behavior, F-09, or the remaining CI/test-isolation work in F-10.

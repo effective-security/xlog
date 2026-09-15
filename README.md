@@ -12,7 +12,7 @@ go get github.com/effective-security/xlog
 | --- | --- |
 | [`xlog`](doc.go) | Package loggers, levels, context fields, text/color/JSON formatters |
 | [`logrotate`](logrotate/doc.go) | Lumberjack rotation and optional background byte writes |
-| [`stackdriver`](stackdriver/doc.go) | Local JSON output for Google Cloud Logging; see serialization findings below |
+| [`stackdriver`](stackdriver/doc.go) | Local JSON output for Google Cloud Logging |
 
 For contributors and agents, start with [Documentation/codemap.md](Documentation/codemap.md).
 [FINDINGS.md](FINDINGS.md) records bugs and review risks;
@@ -87,9 +87,11 @@ logger.ContextKV(ctx, xlog.INFO, "event", "request started")
 
 Import `context` for this example. `ContextWithKV` mutates existing shared log
 context state and returns the same context once initialized. Nil or empty strings
-delete keys. Parent and sibling contexts sharing that state see updates. Treat
-`ContextEntries` as read-only. `WithValues` creates a logger with persistent fields,
-but currently shares slice storage in some cases and snapshots its level (F-05).
+delete keys. Parent and sibling contexts sharing that state see updates.
+`ContextEntries` returns an independent slice snapshot. `WithValues` copies its
+persistent fields and follows the registered parent's level changes. Referenced
+maps, pointers, and slices are not deeply copied; keep them immutable while
+logging. Plain messages on derived loggers use a structured `msg` field.
 
 ## Levels
 
@@ -117,9 +119,12 @@ calling `SetRepoLevel(s)`: these helpers currently ignore parse errors and can
 silence all noncritical logs. Repository `"*"` selects global levels only in those
 configuration helpers, not in `SetPackageLogLevel`.
 
-`OnError` observes ERROR calls even when filtered. It executes under the global
-lock: callbacks must be fast and must not call xlog, its configuration helpers,
-or the hijacked standard logger.
+`OnError` observes ERROR calls even when filtered. It runs synchronously without
+logger locks and may access configuration or log at other levels. Concurrent
+ERROR calls can invoke it concurrently; guard shared callback state and avoid
+unguarded recursive ERROR logging. Custom formatters, destination writers, and
+value serializers still must not recursively emit through the same output path
+(F-07). Configuration reads and changes do not wait for destination I/O.
 
 ## Rotating files and buffering
 
@@ -140,26 +145,52 @@ uses `app.log`, seven days of retention, and a 100 MB maximum file size.
 `Initialize` creates the directory and installs a new pretty formatter; it does
 not preserve previous formatter options. File opening is lazy. With an extra
 sink, writes reach the file and then the extra sink sequentially. The caller
-owns and must flush/close the extra sink.
+owns the extra sink. Rotation flushes it when supported but never closes it.
 
-`buffered=true` enables an existing 256-item `ChannelWriter` queue for **already
-formatted bytes**. Formatting and queue admission still happen under xlog's global
-lock. A full queue blocks every package. With no extra sink, an 8 KiB file buffer
-exists even with `buffered=false`; that path has no periodic flush without the
-worker. `PackageLogger.Flush` does not drain the worker or guarantee disk durability.
+`buffered=true` enables a 256-item `ChannelWriter` queue for **already formatted
+bytes**. Formatting and queue admission hold the output lock; a full queue blocks
+other enabled logging calls. Configuration and filtered calls remain independent.
+Without an extra sink, an 8 KiB file buffer exists even with `buffered=false`;
+that path has no periodic flush without the worker.
 
-There are open shutdown, resource ownership, and error reporting bugs in this
-implementation (F-02/F-03/F-04). Stop all producers before closing; do not write
-to a stopped `ChannelWriter`. The [roadmap](ROADMAP.md#optional-buffered-ingress)
-defines the proposed lifecycle and record-ingress design.
+`logger.FlushError()` flushes the formatter and supported downstream buffers,
+including the byte queue, and reports the first delivery error. `Flush()` performs
+the same work but discards the result. CRITICAL records flush before fatal/panic
+side effects. Flushing waits for delivery, not filesystem durability; an arbitrary
+stalled writer can block it indefinitely.
+
+Rotation `Close` removes its formatter override, waits for admitted calls, drains
+queued bytes, flushes, and closes its file. Overlapping rotators can close in any
+order; repeated/concurrent closes return the same result. A later `SetFormatter`
+supersedes pending overrides. New writes to a stopped ChannelWriter return a
+wrapped `io.ErrClosedPipe`; its `Close`, `Flush`, and `Err` expose delivery errors.
+
+### Error reporting
+
+The existing `Formatter` interface remains unchanged. Built-in output formatters
+also implement `xlog.ErrorFormatter`: `Err()` safely returns the first observed
+encoding/write/flush error, while `FlushError()` flushes supported destinations.
+`xlog.FlushFormatter(f)` uses this optional API and supports legacy formatters.
+Errors remain available even after successful later records. Unsupported JSON
+values reject that record and record the encoding error; text coercion helpers
+retain their documented empty-string fallback. Low-level filesystem causes that
+lumberjack already converts to strings cannot be recovered by xlog.
+
+Use `xlog.InstallFormatter(f)` when managing a destination lifecycle: its returned
+removal function waits for admitted calls and supports out-of-order removal.
+`SetFormatter` only replaces configuration; it does not drain or close a sink.
+Direct formatter calls are untracked and require caller synchronization.
 
 ## Cloud Logging
 
 `stackdriver.NewFormatter(os.Stdout, "app")` installs through `xlog.SetFormatter`.
-It writes locally; a collector must forward records. Its current serializer can
-silently drop ordinary strings and change their types (F-01). Review that finding
-before adopting this formatter. JSON output is also available through
-`xlog.NewJSONFormatter`, with a different schema.
+It writes locally; a collector must forward records. Strings retain their type
+and whitespace; integer values remain exact JSON numbers. Durations and display
+enums become JSON strings, times use their JSON representation, and custom JSON
+marshalers (including RawMessage) are respected. Errors without a JSON marshaler
+use detailed text. Empty strings and nil values follow `FormatPrintEmpty`.
+Encoding/destination failures are available through `xlog.ErrorFormatter`.
+`xlog.NewJSONFormatter` offers JSON output with a different schema.
 
 ## Development
 

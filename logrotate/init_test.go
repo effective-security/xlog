@@ -4,15 +4,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // TestInitializeAndClose verifies that Initialize creates the log folder,
-// returns a Closer that closes only once, and errors on subsequent Close.
+// returns an idempotent Closer.
 func TestInitializeAndClose(t *testing.T) {
-	t.Parallel()
-
 	dir := t.TempDir()
 	closer, err := Initialize(dir, "testfile", 7, 5, false, nil)
 	require.NoError(t, err)
@@ -26,9 +23,8 @@ func TestInitializeAndClose(t *testing.T) {
 	err = closer.Close()
 	require.NoError(t, err)
 
-	// Calling Close second time returns error
+	// Calling Close a second time returns the same successful result
 	err = closer.Close()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "already closed")
+	require.NoError(t, err)
 
 }

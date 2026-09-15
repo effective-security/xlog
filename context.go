@@ -93,8 +93,9 @@ func ContextWithKV(ctx context.Context, entries ...any) context.Context {
 }
 
 // ContextEntries returns alternating keys and values sorted by key, or nil when
-// the context has no log state. The returned slice aliases internal state; treat it
-// and any referenced mutable values as read-only.
+// the context has no log state. The returned slice is an independent snapshot;
+// referenced mutable values are not deeply copied and must remain read-only
+// during logging.
 func ContextEntries(ctx context.Context) []any {
 	v := ctx.Value(keyContext)
 	if v == nil {
@@ -104,5 +105,5 @@ func ContextEntries(ctx context.Context) []any {
 	rctx := v.(*contextLogs)
 	rctx.lock.RLock()
 	defer rctx.lock.RUnlock()
-	return rctx.entries
+	return slices.Clone(rctx.entries)
 }

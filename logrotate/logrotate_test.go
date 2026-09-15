@@ -3,8 +3,6 @@ package logrotate_test
 import (
 	"bufio"
 	"bytes"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/effective-security/xlog"
@@ -17,7 +15,7 @@ func Test_Rotate(t *testing.T) {
 	var b bytes.Buffer
 	writer := bufio.NewWriter(&b)
 
-	tmpDir := filepath.Join(os.TempDir(), "tests", "logrotate")
+	tmpDir := t.TempDir()
 
 	logRotate, err := logrotate.Initialize(tmpDir, "rotator", 1, 1, false, writer)
 	require.NoError(t, err)
@@ -26,7 +24,7 @@ func Test_Rotate(t *testing.T) {
 	}()
 
 	logger := xlog.NewPackageLogger("github.com/effective-security/xlog", "logrotate")
-	xlog.SetGlobalLogLevel(xlog.TRACE)
+	xlog.SetRepoLogLevel("github.com/effective-security/xlog", xlog.TRACE)
 
 	logger.Debug("1")
 	logger.Debugf("%d", 2)
