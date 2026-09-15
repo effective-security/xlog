@@ -37,7 +37,6 @@ func TestFlatten(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			cfg := Config{
@@ -66,7 +65,6 @@ func TestRemovePart(t *testing.T) {
 		{"closing only", "x]y", "[", "]", "x]y"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := removePart(tc.val, tc.open, tc.close)

@@ -17,7 +17,6 @@
 package xlog
 
 import (
-	"io"
 	"os"
 	"strings"
 )
@@ -48,9 +47,4 @@ func init() {
 	case "NIL":
 		SetFormatter(NewNilFormatter())
 	}
-}
-
-// NewDefaultFormatter returns an instance of default formatter
-func NewDefaultFormatter(out io.Writer) Formatter {
-	return NewPrettyFormatter(out)
 }

@@ -34,7 +34,6 @@ func TestNilLoggerMethods(t *testing.T) {
 		{"WithValues", func() { _ = logger.WithValues("k", "v") }},
 	}
 	for _, tc := range noPanic {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			require.NotPanics(t, tc.fn)
@@ -49,7 +48,6 @@ func TestNilLoggerMethods(t *testing.T) {
 		{"Panicf", func() { logger.Panicf("%s", "msg") }},
 	}
 	for _, tc := range panicCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			require.Panics(t, tc.fn)

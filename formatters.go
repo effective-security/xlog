@@ -30,31 +30,37 @@ import (
 	"time"
 )
 
-// Formatter defines an interface for formatting logs
+// Formatter formats records and writes them to a destination. PackageLogger
+// serializes calls through a global lock; direct calls require synchronization.
+// Formatting and Flush cannot report encoding or destination errors.
 type Formatter interface {
-	// Format log entry string to the stream,
-	// the entries are separated by space
+	// Format emits plain entries using the formatter's message representation.
 	Format(pkg string, level LogLevel, depth int, entries ...any)
-	// FormatKV log entry string to the stream,
-	// the entries are key/value pairs
+	// FormatKV emits alternating string keys and values as structured fields.
 	FormatKV(pkg string, level LogLevel, depth int, entries ...any)
-	// Flush the logs
+	// Flush flushes the formatter's buffer, not necessarily downstream buffers
+	// or durable storage. Implementations cannot return errors through this API.
 	Flush()
-	// Options allows to configure formatter behavior
+	// Options mutates formatter configuration. Apply options before publishing
+	// the formatter with SetFormatter, or while logging is stopped.
 	Options(ops ...FormatterOption) Formatter
 }
 
-// TimeNowFn returns the current time; it may be overridden in tests for deterministic behavior.
+// TimeNowFn returns the current time. Override and restore it only while logging
+// is stopped, for example in tests that do not run in parallel.
 var TimeNowFn = time.Now
+
+// NewDefaultFormatter returns the default text formatter, a PrettyFormatter.
+func NewDefaultFormatter(out io.Writer) Formatter {
+	return NewPrettyFormatter(out)
+}
 
 // NewStringFormatter returns string-based formatter
 func NewStringFormatter(w io.Writer) Formatter {
 	return &StringFormatter{
-		w: bufio.NewWriter(w),
-		Config: Config{
-			WithCaller: true,
-			SkipTime:   false,
-		},
+		w:          bufio.NewWriter(w),
+		WithCaller: true,
+		SkipTime:   false,
 	}
 }
 
@@ -176,13 +182,11 @@ func (s *StringFormatter) Flush() {
 // NewPrettyFormatter returns an instance of PrettyFormatter
 func NewPrettyFormatter(w io.Writer) Formatter {
 	return &PrettyFormatter{
-		w: bufio.NewWriter(w),
-		Config: Config{
-			WithCaller:   true,
-			SkipTime:     false,
-			WithLocation: false,
-			WithColor:    false,
-		},
+		w:            bufio.NewWriter(w),
+		WithCaller:   true,
+		SkipTime:     false,
+		WithLocation: false,
+		WithColor:    false,
 	}
 }
 
@@ -331,11 +335,14 @@ func (c *Config) flatten(kvList ...any) []any {
 	return list
 }
 
+// WithValueString supplies a display name for values such as generated enums.
 type WithValueString interface {
+	// ValueString returns the value's human-readable name.
 	ValueString() string
 }
 
-// EscapedInt64 returns a string suitable for logging.
+// EscapedInt64 formats an integer for text logs, prefixing an underscore when
+// its magnitude is at least 9007199254740991. The result is not always JSON.
 func EscapedInt64(value int64) string {
 	if value <= -9007199254740991 || value >= 9007199254740991 {
 		return "_" + strconv.FormatInt(value, 10)
@@ -348,7 +355,8 @@ const (
 	max64NumberLen = 19 // len(9007199254740991)
 )
 
-// EscapedUInt64 returns a string suitable for logging.
+// EscapedUInt64 formats an integer for text logs, prefixing an underscore when
+// it is at least 9007199254740991. The result is not always JSON.
 func EscapedUInt64(value uint64) string {
 	str := strconv.FormatUint(value, 10)
 	// JavaScript max number (9007199254740991) exceeding 15 digits
@@ -413,7 +421,10 @@ func escapeString(value string) string {
 	return s
 }
 
-// EscapedString returns a JSON-escaped string representation of the value, suitable for logging.
+// EscapedString renders a value for text logs, quoting selected strings and
+// encoding composite values as JSON. It is not a JSON serializer: simple
+// strings, times, durations, and underscore-prefixed large integers may be bare.
+// Unsupported JSON values produce an empty string; encoding errors are ignored.
 func EscapedString(value any) string {
 	switch typ := value.(type) {
 	case error:

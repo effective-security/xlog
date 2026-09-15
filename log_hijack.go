@@ -19,7 +19,9 @@ import (
 	"strings"
 )
 
-// Stderr is an instance of standard logger to Stderr
+// Stderr routes standard-library log messages through xlog at INFO; despite its
+// name, its destination is the configured formatter, not necessarily os.Stderr.
+// It is initialized only on non-Windows platforms.
 var Stderr *log.Logger
 
 func initHijack() {

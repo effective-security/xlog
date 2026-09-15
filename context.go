@@ -2,7 +2,7 @@ package xlog
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"sync"
 )
 
@@ -23,9 +23,10 @@ type contextLogs struct {
 // entries in "key1=value1, ..., keyN=valueN" format.
 // The entries must come in pairs of key (string) and value;
 // an odd number of entries or a non-string key will cause a panic.
-// The nil or empty string values are ignored.
-// If ContextWithKV is called multiple times, the values are accumulated and/or updated.
-// If a key is provided multiple times, the latest value is used.
+// Nil or empty string values delete the corresponding key.
+// Once a context contains log values, this mutates the shared log state and
+// returns the same context; parents and siblings sharing that state see updates.
+// Duplicate keys use the latest value. Entries are sorted by key.
 func ContextWithKV(ctx context.Context, entries ...any) context.Context {
 	if len(entries)%2 != 0 {
 		// it's safe to panic here, instead of during logging
@@ -81,7 +82,7 @@ func ContextWithKV(ctx context.Context, entries ...any) context.Context {
 	}
 
 	// Sort keys for deterministic iteration order
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	// Build entries slice in sorted order
 	for _, key := range keys {
@@ -91,7 +92,9 @@ func ContextWithKV(ctx context.Context, entries ...any) context.Context {
 	return ctx
 }
 
-// ContextEntries returns log entries as a slice of alternating keys and values
+// ContextEntries returns alternating keys and values sorted by key, or nil when
+// the context has no log state. The returned slice aliases internal state; treat it
+// and any referenced mutable values as read-only.
 func ContextEntries(ctx context.Context) []any {
 	v := ctx.Value(keyContext)
 	if v == nil {

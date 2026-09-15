@@ -19,7 +19,8 @@ import (
 	"log"
 )
 
-// NilLogger does not produce any output
+// NilLogger discards ordinary and fatal logs. Panic methods call the standard
+// logger and panic, so they can still produce output through its destination.
 type NilLogger struct {
 }
 
@@ -37,12 +38,12 @@ func (l *NilLogger) Fatalf(format string, args ...any) {}
 // Fatalln does nothing
 func (l *NilLogger) Fatalln(args ...any) {}
 
-// Panic does nothing
+// Panic logs through the standard logger and panics with fmt.Sprint(args...).
 func (l *NilLogger) Panic(args ...any) {
 	log.Panic(args...)
 }
 
-// Panicf does nothing
+// Panicf logs through the standard logger and panics with the formatted message.
 func (l *NilLogger) Panicf(format string, args ...any) {
 	log.Panicf(format, args...)
 }
@@ -56,9 +57,7 @@ func (l *NilLogger) Infof(format string, args ...any) {}
 // KV does nothing
 func (l *NilLogger) KV(_ LogLevel, entries ...any) {}
 
-// ContextKV logs entries in "key1=value1, ..., keyN=valueN" format,
-// and add log entries from ctx as well.
-// ContextWithKV method can be used to add extra values to context
+// ContextKV discards context and entries without validating them.
 func (l *NilLogger) ContextKV(_ context.Context, _ LogLevel, _ ...any) {}
 
 // Error does nothing
@@ -91,8 +90,7 @@ func (l *NilLogger) Trace(entries ...any) {}
 // Tracef does nothing
 func (l *NilLogger) Tracef(format string, args ...any) {}
 
-// WithValues adds some key-value pairs of context to a logger.
-// See Info for documentation on how key/value pairs work.
+// WithValues ignores the fields and returns the same no-op logger.
 func (l *NilLogger) WithValues(keysAndValues ...any) KeyValueLogger {
 	return l
 }

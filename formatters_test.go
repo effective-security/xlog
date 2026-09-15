@@ -139,11 +139,11 @@ func TestEscapedStringConcurrent(t *testing.T) {
 
 	// Start concurrent goroutines
 	var wg sync.WaitGroup
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(goroutineID int) {
 			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+			for j := range iterations {
 				// Use different data for each iteration to make corruption more obvious
 				dataIndex := (goroutineID + j) % len(testData)
 				result := xlog.EscapedString(testData[dataIndex])
@@ -207,11 +207,11 @@ func TestEscapedStringConcurrentStress(t *testing.T) {
 	results := make(chan string, numGoroutines*iterations)
 
 	var wg sync.WaitGroup
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(goroutineID int) {
 			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+			for j := range iterations {
 				dataIndex := (goroutineID + j) % len(testData)
 				result := xlog.EscapedString(testData[dataIndex])
 				results <- result
