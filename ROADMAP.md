@@ -2,7 +2,11 @@
 
 ## Milestone 1 — Correctness and dependable validation
 
-Prerequisite for promoting either existing buffering or new ingress buffering.
+Prerequisite for promoting new ingress buffering. F-01 through F-05 and F-08
+are now fixed, including error-aware flushing and owned rotation shutdown.
+F-07 is partly addressed: configuration and ERROR observers are independent of
+output locking; recursive output and enabled-call contention remain. The list
+below records the milestone scope; FINDINGS.md tracks current status.
 
 1. Fix Stackdriver serialization (F-01). Choose explicit JSON encodings for large
    integers, errors, enums, and durations; preserve strings as strings.
@@ -48,7 +52,7 @@ from producers; it does not increase the destination's sustainable throughput.
 | Mode                    | Work on producer                                | Work on worker                           | Current status                                          |
 | ----------------------- | ----------------------------------------------- | ---------------------------------------- | ------------------------------------------------------- |
 | Synchronous             | Filter, metadata, encode, write                 | None                                     | Default xlog path; rotation can still add a file buffer |
-| Buffered bytes          | Filter, metadata, encode, copy/enqueue bytes    | Destination write/flush                  | Existing ChannelWriter; lifecycle fixes required        |
+| Buffered bytes          | Filter, metadata, encode, copy/enqueue bytes    | Destination write/flush                  | Existing ChannelWriter; drain/error lifecycle repaired        |
 | Buffered record ingress | Filter, metadata, owned field snapshot, enqueue | Encode, batch where allowed, write/flush | Proposed opt-in mode                                    |
 
 Keep synchronous behavior as the default and a supported mode. First make the
@@ -58,7 +62,7 @@ two capacities and flush boundaries obscure memory and loss behavior.
 
 ### Proposed boundaries and API
 
-Split registry/configuration locking from record delivery. A future Record
+Registry/configuration locking is now separate from output serialization. A future Record
 contains producer timestamp, level, package, caller PC/file/line, message, and
 owned structured fields. An Encoder renders a Record; a Sink admits it and
 owns delivery. One worker initially owns each encoder/destination so current

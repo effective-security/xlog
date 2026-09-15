@@ -23,8 +23,10 @@ import (
 	"path"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/effective-security/xlog"
 )
 
@@ -60,13 +62,24 @@ type formatter struct {
 	xlog.Config
 	w       *bufio.Writer
 	logName string
+	dest    io.Writer
+	errMu   sync.Mutex
+	err     error
 }
 
 // NewFormatter returns a Stackdriver formatter for xlog, writing log entries
 // as Stackdriver-compatible JSON. logName sets the Stackdriver log name.
 func NewFormatter(w io.Writer, logName string) xlog.Formatter {
+	var buffer *bufio.Writer
+	if buffered, ok := w.(*bufio.Writer); ok {
+		buffer = bufio.NewWriter(buffered)
+	} else {
+		// Detect short writes before bufio can retry a stalled large write.
+		buffer = bufio.NewWriter(io.MultiWriter(w))
+	}
 	return &formatter{
-		w:          bufio.NewWriter(w),
+		w:          buffer,
+		dest:       w,
 		logName:    logName,
 		WithCaller: true,
 		SkipTime:   false,
@@ -137,17 +150,50 @@ func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj *kventrie
 	}
 
 	b, err := json.Marshal(ee)
-	if err == nil {
-		_, _ = c.w.Write(b)
-		_ = c.w.WriteByte('\n')
+	if err != nil {
+		c.record(errors.WithMessage(err, "unable to encode Stackdriver log record"))
+	} else {
+		_, writeErr := c.w.Write(b)
+		c.record(errors.WithMessage(writeErr, "unable to write Stackdriver log record"))
+		c.record(errors.WithMessage(c.w.WriteByte('\n'), "unable to terminate Stackdriver log record"))
 	}
-
-	c.Flush()
+	c.flushBuffer()
 }
 
 // Flush the logs
 func (c *formatter) Flush() {
-	_ = c.w.Flush()
+	_ = c.FlushError()
+}
+
+// FlushError flushes formatter and downstream buffers and reports the first error.
+func (c *formatter) FlushError() error {
+	c.flushBuffer()
+	if flusher, ok := c.dest.(interface{ Flush() error }); ok {
+		c.record(errors.WithMessage(flusher.Flush(), "unable to flush Stackdriver destination"))
+	}
+	return c.Err()
+}
+
+func (c *formatter) flushBuffer() {
+	c.record(errors.WithMessage(c.w.Flush(), "unable to write Stackdriver log record"))
+}
+
+// Err returns the first encoding or destination error, safely during logging.
+func (c *formatter) Err() error {
+	c.errMu.Lock()
+	defer c.errMu.Unlock()
+	return c.err
+}
+
+func (c *formatter) record(err error) {
+	if err == nil {
+		return
+	}
+	c.errMu.Lock()
+	defer c.errMu.Unlock()
+	if c.err == nil {
+		c.err = err
+	}
 }
 
 type entry struct {
@@ -246,16 +292,31 @@ func (o *kventries) MarshalJSON() (out []byte, err error) {
 
 		key, err := json.Marshal(k)
 		if err != nil {
-			return nil, err
+			return nil, errors.WithMessage(err, "unable to encode Stackdriver field key")
 		}
-		val := xlog.EscapedString(v)
-		if val != "" {
-			out = append(out, key...)
-			out = append(out, ':')
-			out = append(out, val...)
-			out = append(out, ',')
-			lastComma = true
+		// JSON marshalers retain ownership of their representation. Display-only
+		// values become JSON strings; ordinary numbers keep their exact JSON value.
+		if _, marshaler := v.(json.Marshaler); !marshaler {
+			switch value := v.(type) {
+			case error:
+				v = fmt.Sprintf("%+v", value)
+			case xlog.WithValueString:
+				v = value.ValueString()
+			case json.Number, *json.Number:
+				// Preserve encoding/json's numeric representation.
+			case fmt.Stringer:
+				v = value.String()
+			}
 		}
+		val, err := json.Marshal(v)
+		if err != nil {
+			return nil, errors.Wrapf(err, "unable to encode Stackdriver field %s", k)
+		}
+		out = append(out, key...)
+		out = append(out, ':')
+		out = append(out, val...)
+		out = append(out, ',')
+		lastComma = true
 	}
 	if lastComma {
 		// replace last ',' with '}'

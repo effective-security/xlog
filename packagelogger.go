@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 )
 
 // ExitFunc terminates the process after Fatal or Fatalf; it defaults to os.Exit.
@@ -29,6 +30,7 @@ type PackageLogger struct {
 	pkg    string
 	level  LogLevel
 	values []any
+	parent *PackageLogger // registered logger that owns the level
 }
 
 const calldepth = 2
@@ -41,60 +43,96 @@ const (
 )
 
 // WithValues derives a logger with additional alternating string keys and values.
-// It snapshots the current level and may share field storage with other derived
-// loggers. See FINDINGS.md before sharing or branching these loggers concurrently.
+// The field slice is copied; referenced maps, pointers, and slices are not deeply
+// copied and must not be mutated concurrently with logging. Derived loggers share
+// the registered parent's level, including later configuration changes.
 func (p *PackageLogger) WithValues(keysAndValues ...any) KeyValueLogger {
+	parent := p
+	if p.parent != nil {
+		parent = p.parent
+	}
 	return &PackageLogger{
 		pkg:    p.pkg,
-		level:  p.level,
-		values: append(p.values, keysAndValues...),
+		parent: parent,
+		values: append(slices.Clone(p.values), keysAndValues...),
 	}
 }
 
-func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, entries ...any) {
+// prepare invokes observers outside locks and admits output under the registry
+// lock, so removing a formatter can wait for all calls that selected it.
+func (p *PackageLogger) prepare(inLevel LogLevel) *formatterRegistration {
+	logger.Lock()
+	observer := logger.onError
+	logger.Unlock()
+	if inLevel == ERROR && observer != nil {
+		observer(p.pkg)
+	}
 	logger.Lock()
 	defer logger.Unlock()
-
-	if inLevel == ERROR && logger.onError != nil {
-		logger.onError(p.pkg)
+	if inLevel != CRITICAL && p.currentLevel() < inLevel {
+		return nil
 	}
+	if logger.formatter == nil {
+		return nil
+	}
+	if logger.current == nil {
+		logger.current = &formatterRegistration{formatter: logger.formatter}
+	}
+	registration := logger.current
+	registration.active.Add(1)
+	return registration
+}
 
-	if inLevel != CRITICAL && p.level < inLevel {
+// currentLevel requires the registry lock.
+func (p *PackageLogger) currentLevel() LogLevel {
+	if p.parent != nil {
+		return p.parent.level
+	}
+	return p.level
+}
+
+func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, entries ...any) {
+	registration := p.prepare(inLevel)
+	if registration == nil {
 		return
 	}
+	defer registration.active.Done()
+	logger.output.Lock()
+	defer logger.output.Unlock()
 	if len(p.values) > 0 {
-		entries = append(p.values, entries...)
-	}
-	if logger.formatter != nil {
 		if t == plain {
-			logger.formatter.Format(p.pkg, inLevel, depth+1, entries...)
-		} else {
-			logger.formatter.FormatKV(p.pkg, inLevel, depth+1, entries...)
+			entries = []any{"msg", fmt.Sprint(entries...)}
+			t = kv
 		}
+		entries = append(slices.Clone(p.values), entries...)
+	}
+	if t == plain {
+		registration.formatter.Format(p.pkg, inLevel, depth+1, entries...)
+	} else {
+		registration.formatter.FormatKV(p.pkg, inLevel, depth+1, entries...)
+	}
+	if inLevel == CRITICAL {
+		_ = FlushFormatter(registration.formatter)
 	}
 }
 
 func (p *PackageLogger) internalLogf(depth int, inLevel LogLevel, format string, args ...any) {
-	logger.Lock()
-	defer logger.Unlock()
-
-	if inLevel == ERROR && logger.onError != nil {
-		logger.onError(p.pkg)
-	}
-
-	if inLevel != CRITICAL && p.level < inLevel {
+	registration := p.prepare(inLevel)
+	if registration == nil {
 		return
 	}
-	if logger.formatter != nil {
-		entries := []any{fmt.Sprintf(format, args...)}
-		if len(p.values) > 0 {
-			cfg := Config{
-				PrintEmpty: false,
-			}
-			entries = append(cfg.flatten(p.values...), entries)
-		}
-
-		logger.formatter.Format(p.pkg, inLevel, depth+1, entries...)
+	defer registration.active.Done()
+	logger.output.Lock()
+	defer logger.output.Unlock()
+	message := fmt.Sprintf(format, args...)
+	if len(p.values) > 0 {
+		entries := append(slices.Clone(p.values), "msg", message)
+		registration.formatter.FormatKV(p.pkg, inLevel, depth+1, entries...)
+	} else {
+		registration.formatter.Format(p.pkg, inLevel, depth+1, message)
+	}
+	if inLevel == CRITICAL {
+		_ = FlushFormatter(registration.formatter)
 	}
 }
 
@@ -102,7 +140,7 @@ func (p *PackageLogger) internalLogf(depth int, inLevel LogLevel, format string,
 func (p *PackageLogger) LevelAt(l LogLevel) bool {
 	logger.Lock()
 	defer logger.Unlock()
-	return p.level >= l
+	return p.currentLevel() >= l
 }
 
 // Logf logs a printf-style message at l, including CRITICAL and DEBUG.
@@ -239,10 +277,26 @@ func (p *PackageLogger) Trace(entries ...any) {
 	p.internalLog(plain, calldepth, TRACE, entries...)
 }
 
-// Flush flushes the current global formatter. It panics if no formatter is set
-// and does not drain a ChannelWriter or guarantee durable storage.
+// Flush flushes the current global formatter, or does nothing when it is nil.
+// It does not guarantee durable storage. See FlushError for error reporting.
 func (p *PackageLogger) Flush() {
+	_ = p.FlushError()
+}
+
+// FlushError flushes the current formatter and supported downstream buffers,
+// including queued writes, and reports errors when supported by the formatter.
+// It returns nil when output is disabled. It does not guarantee durable storage.
+func (p *PackageLogger) FlushError() error {
 	logger.Lock()
-	defer logger.Unlock()
-	logger.formatter.Flush()
+	registration := logger.current
+	if registration == nil || registration.formatter == nil {
+		logger.Unlock()
+		return nil
+	}
+	registration.active.Add(1)
+	logger.Unlock()
+	defer registration.active.Done()
+	logger.output.Lock()
+	defer logger.output.Unlock()
+	return FlushFormatter(registration.formatter)
 }

@@ -122,13 +122,17 @@ func ParseLevel(s string) (LogLevel, error) {
 type RepoLogger map[string]*PackageLogger
 
 // OnErrorFn observes ERROR calls, including filtered ones. It runs synchronously
-// under the global logger lock and must not call xlog or the hijacked log logger.
+// without logger locks. Callbacks may use xlog configuration or log at other
+// levels; logging ERROR recursively requires a caller-provided recursion guard.
+// Concurrent ERROR calls may invoke the observer concurrently.
 type OnErrorFn func(pkg string)
 
 type loggerStruct struct {
 	sync.Mutex
 	repoMap   map[string]RepoLogger
 	formatter Formatter
+	current   *formatterRegistration
+	output    sync.Mutex
 	onError   OnErrorFn
 }
 
@@ -136,7 +140,7 @@ type loggerStruct struct {
 var logger = new(loggerStruct)
 
 // OnError installs an ERROR observer, or removes it when fn is nil.
-// The callback must be fast and must not re-enter xlog; see OnErrorFn.
+// The callback runs synchronously without holding configuration or output locks.
 func OnError(fn OnErrorFn) {
 	logger.Lock()
 	defer logger.Unlock()
@@ -145,7 +149,7 @@ func OnError(fn OnErrorFn) {
 
 // SetGlobalLogLevel sets the log level for all packages in all repositories
 // already registered with NewPackageLogger. It does not set the default for
-// future registrations or update loggers derived by WithValues.
+// future registrations. Derived loggers share their registered parent's level.
 func SetGlobalLogLevel(l LogLevel) {
 	logger.Lock()
 	defer logger.Unlock()
@@ -231,6 +235,52 @@ func SetFormatter(f Formatter) {
 	logger.Lock()
 	defer logger.Unlock()
 	logger.formatter = f
+	logger.current = &formatterRegistration{formatter: f}
+}
+
+// formatterRegistration tracks admitted calls and removable formatter overrides.
+// The linked list and WaitGroup admission are protected by logger.Mutex.
+type formatterRegistration struct {
+	formatter Formatter
+	previous  *formatterRegistration
+	active    sync.WaitGroup
+}
+
+// InstallFormatter temporarily installs f and returns an idempotent removal
+// function. Overrides may be removed in any order; removed formatters are never
+// restored by later removals. SetFormatter supersedes all installed overrides.
+// Removal waits for admitted PackageLogger calls to finish, allowing the caller
+// to flush and close f's destination safely. It does not flush or close f itself.
+// Do not remove an override from inside its formatter or destination, or reuse
+// its formatter elsewhere while closing it. Direct formatter calls are untracked.
+func InstallFormatter(f Formatter) func() {
+	logger.Lock()
+	if logger.current == nil {
+		logger.current = &formatterRegistration{formatter: logger.formatter}
+	}
+	registration := &formatterRegistration{
+		formatter: f,
+		previous:  logger.current,
+	}
+	logger.current = registration
+	logger.formatter = f
+	logger.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			logger.Lock()
+			for link := &logger.current; *link != nil; link = &(*link).previous {
+				if *link == registration {
+					*link = registration.previous
+					break
+				}
+			}
+			logger.formatter = logger.current.formatter
+			logger.Unlock()
+			registration.active.Wait()
+		})
+	}
 }
 
 // GetFormatter returns current formatter

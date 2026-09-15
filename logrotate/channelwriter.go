@@ -17,20 +17,29 @@ package logrotate
 import (
 	"io"
 	"sync"
-	"sync/atomic"
 	"time"
+
+	"github.com/cockroachdb/errors"
 )
 
 // ChannelWriter copies writes into a bounded queue consumed by one goroutine.
-// A full queue blocks producers. Destination write and flush errors are ignored.
-// Quiesce all producers before Stop and never write afterward. See FINDINGS.md
-// for shutdown limitations. A ChannelWriter must not be copied after first use.
+// A full queue blocks producers. Err, Flush, and Close report destination errors.
+// Stop rejects new writes and waits for accepted writes and the final flush.
+// A ChannelWriter must not be copied after first use.
 type ChannelWriter struct {
-	write    chan []byte
-	stop     chan bool
-	stopped  chan bool
-	running  atomic.Bool
-	buffPool sync.Pool
+	write     chan writeRequest
+	stop      chan struct{}
+	stopped   chan struct{}
+	admission sync.RWMutex // protects queue closure against active senders
+	stopOnce  sync.Once
+	buffPool  sync.Pool
+	errMu     sync.Mutex
+	err       error
+}
+
+type writeRequest struct {
+	data    []byte
+	flushed chan error
 }
 
 // NewChannelWriter starts a worker that writes to dest. bufferDepth is the
@@ -40,11 +49,10 @@ type ChannelWriter struct {
 // Queued writes may be lost on a crash. The destination is never closed.
 func NewChannelWriter(dest io.Writer, bufferDepth int, flushInterval time.Duration) *ChannelWriter {
 	cw := ChannelWriter{
-		write:   make(chan []byte, bufferDepth),
-		stop:    make(chan bool),
-		stopped: make(chan bool),
+		write:   make(chan writeRequest, bufferDepth),
+		stop:    make(chan struct{}),
+		stopped: make(chan struct{}),
 	}
-	cw.running.Store(true)
 	cw.buffPool.New = func() any {
 		return make([]byte, 0, 256)
 	}
@@ -54,28 +62,97 @@ func NewChannelWriter(dest io.Writer, bufferDepth int, flushInterval time.Durati
 
 // IsStopped reports whether stopping has begun, not whether draining has finished.
 func (cw *ChannelWriter) IsStopped() bool {
-	return !cw.running.Load()
-}
-
-// Stop requests shutdown. The first caller waits for queued writes and the
-// destination's Flush, if supported; subsequent callers return immediately.
-// Stop can block indefinitely on a stalled destination. Stop producers first.
-func (cw *ChannelWriter) Stop() {
-	if cw.running.CompareAndSwap(true, false) {
-		cw.stop <- true
-		<-cw.stopped // wait til we've finished draining the queue and have flushed the output
+	select {
+	case <-cw.stop:
+		return true
+	default:
+		return false
 	}
 }
 
-// Write implements the io.Writer interface
+// Stop rejects new writes, drains accepted writes, and flushes the destination
+// if supported. Every caller waits for completion, including concurrent callers.
+// Stop can block indefinitely on a stalled destination.
+func (cw *ChannelWriter) Stop() {
+	cw.stopOnce.Do(func() {
+		// Release blocked senders before waiting for exclusive queue access.
+		close(cw.stop)
+		cw.admission.Lock()
+		close(cw.write)
+		cw.admission.Unlock()
+	})
+	<-cw.stopped
+}
+
+// Close stops the worker and returns the first destination error. It is safe to
+// call concurrently or repeatedly. It does not close the caller-owned destination.
+func (cw *ChannelWriter) Close() error {
+	cw.Stop()
+	return cw.Err()
+}
+
+// Err returns the first destination write, short-write, or flush error observed
+// so far. It is safe during logging; enqueue success does not imply Err is nil.
+func (cw *ChannelWriter) Err() error {
+	cw.errMu.Lock()
+	defer cw.errMu.Unlock()
+	return cw.err
+}
+
+func (cw *ChannelWriter) recordError(err error) {
+	if err == nil {
+		return
+	}
+	cw.errMu.Lock()
+	defer cw.errMu.Unlock()
+	if cw.err == nil {
+		cw.err = err
+	}
+}
+
+// Flush waits for previously enqueued writes and flushes the destination when
+// supported. During or after Stop it waits for shutdown and returns its error.
+// It is a delivery barrier, not an fsync, and can block on a stalled destination.
+func (cw *ChannelWriter) Flush() error {
+	cw.admission.RLock()
+	if cw.IsStopped() {
+		cw.admission.RUnlock()
+		<-cw.stopped
+		return cw.Err()
+	}
+	flushed := make(chan error, 1)
+	select {
+	case cw.write <- writeRequest{flushed: flushed}:
+		cw.admission.RUnlock()
+		return <-flushed
+	case <-cw.stop:
+		cw.admission.RUnlock()
+		<-cw.stopped
+		return cw.Err()
+	}
+}
+
+// Write copies d into the queue and reports enqueue success, not delivery.
+// Writes after shutdown begins return zero and an error wrapping io.ErrClosedPipe.
+// Writes overlapping shutdown may enqueue successfully or return that error;
+// every successful write is drained before Stop returns.
 func (cw *ChannelWriter) Write(d []byte) (int, error) {
-	// the documented sematics of Write are that we can't hold onto the supplied
-	// bytes past the end of the function, so we need to create a copy to Put
-	// on the channel.
+	cw.admission.RLock()
+	defer cw.admission.RUnlock()
+	if cw.IsStopped() {
+		return 0, errors.WithMessage(io.ErrClosedPipe, "unable to enqueue log write")
+	}
+
+	// The caller retains ownership of d after Write returns.
 	buff := cw.buffPool.Get().([]byte)
 	buff = append(buff[:0], d...)
-	cw.write <- buff
-	return len(d), nil
+	select {
+	case cw.write <- writeRequest{data: buff}:
+		return len(d), nil
+	case <-cw.stop:
+		cw.buffPool.Put(buff) //nolint:staticcheck
+		return 0, errors.WithMessage(io.ErrClosedPipe, "unable to enqueue log write")
+	}
 }
 
 type flushable interface {
@@ -85,41 +162,40 @@ type flushable interface {
 // listen is our background go-routine, it reads from the channel and does
 // the writes. It also flushes on a regular basis if configured to do so.
 func (cw *ChannelWriter) listen(dest io.Writer, flushInterval time.Duration) {
-	defer func() {
-		cw.stopped <- true
-	}()
+	defer close(cw.stopped)
 	var flushChan <-chan time.Time
 	flusher, canFlush := dest.(flushable)
+	flush := func() {
+		if canFlush {
+			cw.recordError(errors.WithMessage(flusher.Flush(), "unable to flush queued log destination"))
+		}
+	}
 	if canFlush && flushInterval > 0 {
 		ft := time.NewTicker(flushInterval)
 		flushChan = ft.C
 		defer ft.Stop()
-	} else {
-		flushChan = make(chan time.Time)
 	}
 	for {
 		select {
 		case <-flushChan:
-			if canFlush {
-				_ = flusher.Flush()
+			flush()
+		case request, ok := <-cw.write:
+			if !ok {
+				flush()
+				return
 			}
-		case b := <-cw.write:
-			_, _ = dest.Write(b)
+			if request.flushed != nil {
+				flush()
+				request.flushed <- cw.Err()
+				continue
+			}
+			b := request.data
+			n, err := dest.Write(b)
+			if err == nil && n != len(b) {
+				err = io.ErrShortWrite
+			}
+			cw.recordError(errors.WithMessage(err, "unable to write queued log bytes"))
 			cw.buffPool.Put(b) //nolint:staticcheck
-		case <-cw.stop:
-			// drain what's left of the Write channel
-			for {
-				select {
-				case b := <-cw.write:
-					_, _ = dest.Write(b)
-					cw.buffPool.Put(b) //nolint:staticcheck
-				default:
-					if canFlush {
-						_ = flusher.Flush()
-					}
-					return
-				}
-			}
 		}
 	}
 }

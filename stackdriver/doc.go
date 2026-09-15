@@ -11,6 +11,8 @@
 //
 // Output fields include logName, component, timestamp, severity, message (an
 // object), and sourceLocation. TRACE and DEBUG both map to DEBUG. Configure
-// options before logging. The current KV serializer can discard records or
-// change string types; see FINDINGS.md before using it for production records.
+// options before logging. Values use JSON encoding: strings retain their type,
+// integers remain JSON numbers, durations and display enums become strings,
+// and custom JSON marshalers control their representation. The formatter also
+// implements xlog.ErrorFormatter to report encoding and destination failures.
 package stackdriver

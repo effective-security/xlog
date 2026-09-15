@@ -28,11 +28,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cockroachdb/errors"
 )
 
 // Formatter formats records and writes them to a destination. PackageLogger
-// serializes calls through a global lock; direct calls require synchronization.
-// Formatting and Flush cannot report encoding or destination errors.
+// serializes output separately from configuration; direct calls require synchronization.
+// See ErrorFormatter for optional error reporting and downstream flushing.
+// Formatters, writers, and value serializers must not recursively emit logs
+// through the same output path; configuration access is safe.
 type Formatter interface {
 	// Format emits plain entries using the formatter's message representation.
 	Format(pkg string, level LogLevel, depth int, entries ...any)
@@ -58,16 +62,19 @@ func NewDefaultFormatter(out io.Writer) Formatter {
 // NewStringFormatter returns string-based formatter
 func NewStringFormatter(w io.Writer) Formatter {
 	return &StringFormatter{
-		w:          bufio.NewWriter(w),
+		w:          newFormatterBuffer(w),
+		dest:       w,
 		WithCaller: true,
 		SkipTime:   false,
 	}
 }
 
-// StringFormatter defines string-based formatter
+// StringFormatter renders text records. Do not copy it after first use.
 type StringFormatter struct {
 	Config
-	w *bufio.Writer
+	formatterErrors
+	w    *bufio.Writer
+	dest io.Writer
 }
 
 // Options allows to configure formatter behavior
@@ -110,7 +117,7 @@ func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		printEmpty:   s.PrintEmpty,
 	}
 	writeEntries(s.w, &params, entries...)
-	s.Flush()
+	s.flushBuffer()
 }
 
 type writeEntriesParams struct {
@@ -176,13 +183,25 @@ func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...any) {
 
 // Flush the logs
 func (s *StringFormatter) Flush() {
-	_ = s.w.Flush()
+	_ = s.FlushError()
+}
+
+// FlushError flushes formatter and downstream buffers and reports the first error.
+func (s *StringFormatter) FlushError() error {
+	s.flushBuffer()
+	s.flushDestination(s.dest)
+	return s.Err()
+}
+
+func (s *StringFormatter) flushBuffer() {
+	s.record(errors.WithMessage(s.w.Flush(), "unable to write text log record"))
 }
 
 // NewPrettyFormatter returns an instance of PrettyFormatter
 func NewPrettyFormatter(w io.Writer) Formatter {
 	return &PrettyFormatter{
-		w:            bufio.NewWriter(w),
+		w:            newFormatterBuffer(w),
+		dest:         w,
 		WithCaller:   true,
 		SkipTime:     false,
 		WithLocation: false,
@@ -190,10 +209,13 @@ func NewPrettyFormatter(w io.Writer) Formatter {
 	}
 }
 
-// PrettyFormatter provides default logs format
+// PrettyFormatter renders readable text with optional colors. Do not copy it
+// after first use.
 type PrettyFormatter struct {
 	Config
-	w *bufio.Writer
+	formatterErrors
+	w    *bufio.Writer
+	dest io.Writer
 }
 
 // Options allows to configure formatter behavior
@@ -242,12 +264,23 @@ func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 
 	writeEntries(c.w, &params, entries...)
 
-	c.Flush()
+	c.flushBuffer()
 }
 
 // Flush the logs
 func (c *PrettyFormatter) Flush() {
-	_ = c.w.Flush()
+	_ = c.FlushError()
+}
+
+// FlushError flushes formatter and downstream buffers and reports the first error.
+func (c *PrettyFormatter) FlushError() error {
+	c.flushBuffer()
+	c.flushDestination(c.dest)
+	return c.Err()
+}
+
+func (c *PrettyFormatter) flushBuffer() {
+	c.record(errors.WithMessage(c.w.Flush(), "unable to write pretty log record"))
 }
 
 // ColorOff resets ANSI color to terminal default.

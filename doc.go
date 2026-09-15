@@ -6,7 +6,9 @@
 //	logger.KV(xlog.INFO, "event", "started", "version", "v1")
 //
 // Logging is synchronous and serialized across packages, including formatting
-// and destination writes. The default threshold is INFO; DEBUG is more verbose
+// and destination writes. Configuration uses a separate lock. Built-in output
+// formatters expose ErrorFormatter; PackageLogger.FlushError reports delivery
+// failures and flushes supported downstream queues/buffers. The default threshold is INFO; DEBUG is more verbose
 // than TRACE. No output formatter is installed unless explicitly configured or
 // selected by XLOG_FORMATTER on non-Windows platforms.
 //
@@ -16,6 +18,6 @@
 //
 // The logrotate subpackage adds file rotation and optional queued byte writes.
 // The stackdriver subpackage formats Cloud Logging records. See FINDINGS.md for
-// known serialization and lifecycle limitations, and Documentation/codemap.md
+// remaining configuration, reentrancy, and size-limit issues, and Documentation/codemap.md
 // for formatter contracts, ownership, and navigation.
 package xlog

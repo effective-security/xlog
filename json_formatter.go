@@ -20,12 +20,15 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/cockroachdb/errors"
 )
 
 // NewJSONFormatter returns a new JSONFormatter that outputs log entries in JSON format.
 func NewJSONFormatter(w io.Writer) Formatter {
 	f := &JSONFormatter{
-		w:            bufio.NewWriter(w),
+		w:            newFormatterBuffer(w),
+		dest:         w,
 		WithCaller:   true,
 		SkipTime:     false,
 		WithLocation: false,
@@ -36,9 +39,11 @@ func NewJSONFormatter(w io.Writer) Formatter {
 	return f
 }
 
-// JSONFormatter formats log entries as JSON objects.
+// JSONFormatter formats log entries as JSON objects. Do not copy it after first use.
 type JSONFormatter struct {
 	Config
+	formatterErrors
+	dest    io.Writer
 	w       *bufio.Writer
 	encoder *json.Encoder
 }
@@ -92,14 +97,24 @@ func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, kv map[string]
 		kv["msg"] = msg
 	}
 
-	_ = c.encoder.Encode(kv)
-
-	c.Flush()
+	c.record(errors.WithMessage(c.encoder.Encode(kv), "unable to encode or write JSON log record"))
+	c.flushBuffer()
 }
 
 // Flush the logs
 func (c *JSONFormatter) Flush() {
-	_ = c.w.Flush()
+	_ = c.FlushError()
+}
+
+// FlushError flushes formatter and downstream buffers and reports the first error.
+func (c *JSONFormatter) FlushError() error {
+	c.flushBuffer()
+	c.flushDestination(c.dest)
+	return c.Err()
+}
+
+func (c *JSONFormatter) flushBuffer() {
+	c.record(errors.WithMessage(c.w.Flush(), "unable to write JSON log record"))
 }
 
 func kvToMap(kvList ...any) map[string]any {
