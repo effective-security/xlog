@@ -1,12 +1,20 @@
-// Package logrotate provides an io.Writer that writes log entries to a file
-// and automatically rotates the file when it reaches a specified maximum size.
+// Package logrotate integrates lumberjack file rotation with xlog and provides
+// a ChannelWriter for optional background byte writes.
 //
-// Example:
+// Initialize replaces xlog's global formatter with a PrettyFormatter. For
+// example, within an application function returning error:
 //
-//	lw, err := logrotate.New("/var/log/app.log", 100*1024*1024)
+//	closer, err := logrotate.Initialize("./logs", "app", 7, 100, false, os.Stderr)
 //	if err != nil {
-//	  log.Fatal(err)
+//		return err
 //	}
-//	logger := xlog.New(lw)
-//	logger.Infof("Starting up")
+//	logger := xlog.NewPackageLogger("example.com/app", "main")
+//	logger.KV(xlog.INFO, "event", "started")
+//	// Stop application producers before closing the logging destination.
+//	return closer.Close()
+//
+// The buffered flag queues already formatted bytes; it does not move xlog
+// formatting to a worker. A full queue blocks. Without an extra sink, a file
+// buffer is used even with buffered=false. Close is required to flush it.
+// See FINDINGS.md for known shutdown, error reporting, and file ownership issues.
 package logrotate

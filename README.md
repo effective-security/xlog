@@ -1,123 +1,180 @@
-# xlog logging package
+# xlog
 
-Cloned from https://github.com/coreos/pkg/tree/master/capnslog
+Per-package structured and printf-style logging for Go 1.27+, derived from
+[CoreOS capnslog](https://github.com/coreos/pkg/tree/master/capnslog).
+Loggers share one configurable formatter and output destination.
 
-This clone has slight modifications on the original code,
-adding ability to specify log lever per package,
-and exposing `Logger` interface, not an implementation structure.
+```sh
+go get github.com/effective-security/xlog
+```
 
-In this implementation the `DEBUG` level is above `TRACE` as trace
-is used to trace important functions calls and maybe enable on the cloud more friequently than `DEBUG`
+| Package | Purpose |
+| --- | --- |
+| [`xlog`](doc.go) | Package loggers, levels, context fields, text/color/JSON formatters |
+| [`logrotate`](logrotate/doc.go) | Lumberjack rotation and optional background byte writes |
+| [`stackdriver`](stackdriver/doc.go) | Local JSON output for Google Cloud Logging; see serialization findings below |
 
-## How to use
+For contributors and agents, start with [Documentation/codemap.md](Documentation/codemap.md).
+[FINDINGS.md](FINDINGS.md) records bugs and review risks;
+[ROADMAP.md](ROADMAP.md) describes improvements and optional buffered ingestion.
+
+## Quick start
 
 ```go
-var logger = xlog.NewPackageLogger("github.com/yourorg/yourrepo", "yourpackage")
+package main
 
-// Entries must be provided as key/value pairs: key (string) followed by its value.
-logger.KV(xlog.INFO, "version", v1, "any", override)
+import (
+	"os"
+
+	"github.com/effective-security/xlog"
+)
+
+var logger = xlog.NewPackageLogger("example.com/app", "main")
+
+func main() {
+	xlog.SetFormatter(xlog.NewJSONFormatter(os.Stderr))
+	xlog.SetGlobalLogLevel(xlog.INFO)
+	logger.KV(xlog.INFO, "event", "started", "version", "v1")
+	logger.Infof("listening on port %d", 8080)
+}
 ```
 
-## How to configure
+Register library loggers at package scope. Configure formatting and levels in
+the application after registration. `NewPackageLogger` returns a concrete
+`*PackageLogger`, which implements `Logger`; repeated registration of the same
+repository/package returns the same pointer.
+
+By default, no formatter is installed and output is discarded. On non-Windows
+platforms, import initialization redirects the standard `log` package through
+xlog at INFO, clears its prefix/flags, and reads these variables once:
+
+| Variable | Accepted values | Effect |
+| --- | --- | --- |
+| `XLOG_FORMATTER` | `DEFAULT`, `PRETTY`, `NIL` (case-insensitive) | Pretty output to stderr, or discarded output; other/unset values install nothing |
+| `XLOG_LEVEL` | Level name, letter, or supported number (case-insensitive here) | Updates loggers registered at that moment; invalid values are ignored |
+
+New loggers start at INFO even after an earlier global-level update. Apply levels
+in `main`; `XLOG_LEVEL` is not a reliable default for subsequently registered
+packages. Windows has no automatic hijacking or environment setup. `xlog.Stderr`
+uses the configured formatter on non-Windows and is nil on Windows; it is not a
+separate stderr stream.
+
+## Formatting and fields
 
 ```go
-	if withStackdriver {
-		formatter := stackdriver.NewFormatter(os.Stderr, cfg.Logs.LogsName)
-		xlog.SetFormatter(formatter)
-	} else {
-		formatter := xlog.NewColorFormatter(os.Stderr, true)
-		xlog.SetFormatter(formatter)
-	}
+xlog.SetFormatter(xlog.NewPrettyFormatter(os.Stderr).
+	Options(xlog.FormatWithColor(true), xlog.FormatWithCaller(true)))
 ```
 
-## Set log level for different packages
+`NewStringFormatter` emits space-separated text; `NewPrettyFormatter` emits
+readable text with optional ANSI colors; `NewJSONFormatter` emits one JSON object
+per record. `NewDefaultFormatter` selects pretty text. Apply options before
+installing the formatter. Direct formatter calls and option mutation are not
+safe concurrently; ordinary `PackageLogger` calls are serialized.
 
-Config example:
-
-```yaml
-log_levels:
-  - repo: "*"
-    level: INFO
-  - repo: github.com/effective-security/server
-    package: "*"
-    level: TRACE
-```
-
-Configuration at start up:
+`KV` accepts alternating string keys and values. Always supply complete pairs:
+built-in output formatters panic on non-string keys, but a trailing key is
+treated as nil. Text formatters omit nil and empty strings unless
+`FormatPrintEmpty(true)` is enabled; JSON keeps them. JSON uses the last duplicate
+key, then writes its own enabled metadata (`time`, `level`, `pkg`, `src`, `func`)
+over colliding keys. See the [formatter matrix](Documentation/codemap.md#formatter-contracts)
+for length limits and other differences.
 
 ```go
-	// Set log levels for each repo
-	if cfg.LogLevels != nil {
-		for _, ll := range cfg.LogLevels {
-			l, _ := xlog.ParseLevel(ll.Level)
-			if ll.Repo == "*" {
-				xlog.SetGlobalLogLevel(l)
-			} else {
-				xlog.SetPackageLogLevel(ll.Repo, ll.Package, l)
-			}
-			logger.Infof("logger=%q, level=%v", ll.Repo, l)
-		}
-	}
+ctx := xlog.ContextWithKV(context.Background(), "request_id", "r-123")
+logger.ContextKV(ctx, xlog.INFO, "event", "request started")
 ```
 
-## Need to log to files?
+Import `context` for this example. `ContextWithKV` mutates existing shared log
+context state and returns the same context once initialized. Nil or empty strings
+delete keys. Parent and sibling contexts sharing that state see updates. Treat
+`ContextEntries` as read-only. `WithValues` creates a logger with persistent fields,
+but currently shares slice storage in some cases and snapshots its level (F-05).
 
-This example shows how to use with `logrotate` package
+## Levels
+
+Threshold order is `CRITICAL < ERROR < WARNING < NOTICE < INFO < TRACE < DEBUG`.
+A threshold includes itself and lower levels; TRACE enables tracing but excludes
+DEBUG. CRITICAL bypasses threshold filtering. `Fatal`/`Fatalf` invoke `ExitFunc(1)`
+(normally `os.Exit`); `Panic`/`Panicf` panic. `Log(CRITICAL, ...)` only logs.
+`NewNilLogger` discards fatal calls but its panic methods still log and panic.
+
+Within a function returning `error`:
 
 ```go
-	if cfg.Logs.Directory != "" && cfg.Logs.Directory != nullDevName {
-		os.MkdirAll(cfg.Logs.Directory, 0644)
-
-		var sink io.Writer
-		if flags.isStderr {
-			// This will allow to also print the logs on stderr
-			sink = os.Stderr
-			xlog.SetFormatter(xlog.NewColorFormatter(sink, true))
-		} else {
-			// do not redirect stderr to our log files
-			log.SetOutput(os.Stderr)
-		}
-
-		logRotate, err := logrotate.Initialize(cfg.Logs.Directory, cfg.ServiceName, cfg.Logs.MaxAgeDays, cfg.Logs.MaxSizeMb, true, sink)
-		if err != nil {
-			logger.Errorf("reason=logrotate, folder=%q, err=[%+v]", cfg.Logs.Directory, err)
-			return errors.WithMessage(err, "failed to initialize log rotate")
-		}
-		// Close logRotate when application terminates
-		app.OnClose(logRotate)
-	}
+level, err := xlog.ParseLevel("TRACE")
+if err != nil {
+	return err
+}
+xlog.SetPackageLogLevel("example.com/app", "worker", level)
 ```
 
-## Design Principles
+`ParseLevel` accepts uppercase names/letters and numbers `0` through `5` (ERROR
+through DEBUG). `SetGlobalLogLevel`, `SetRepoLogLevel`, and `SetPackageLogLevel`
+update already registered loggers. Empty/`"*"` package names select the repository.
+Unknown repositories/packages are ignored. Validate `RepoLogLevel.Level` before
+calling `SetRepoLevel(s)`: these helpers currently ignore parse errors and can
+silence all noncritical logs. Repository `"*"` selects global levels only in those
+configuration helpers, not in `SetPackageLogLevel`.
 
-### `package main` is the place where logging gets turned on and routed
+`OnError` observes ERROR calls even when filtered. It executes under the global
+lock: callbacks must be fast and must not call xlog, its configuration helpers,
+or the hijacked standard logger.
 
-A library should not touch log options, only generate log entries. Libraries are silent until main lets them speak.
+## Rotating files and buffering
 
-### All log options are runtime-configurable
+Within a function returning `error`:
 
-Still the job of `main` to expose these configurations. `main` may delegate this to, say, a configuration webhook, but does so explicitly.
+```go
+closer, err := logrotate.Initialize("./logs", "app", 7, 100, false, os.Stderr)
+if err != nil {
+	return err
+}
+logger.KV(xlog.INFO, "event", "started")
+// Stop application log producers before shutdown.
+return closer.Close()
+```
 
-### There is one log object per package. It is registered under its repository and package name
+Import `github.com/effective-security/xlog/logrotate` for this example. Rotation
+uses `app.log`, seven days of retention, and a 100 MB maximum file size.
+`Initialize` creates the directory and installs a new pretty formatter; it does
+not preserve previous formatter options. File opening is lazy. With an extra
+sink, writes reach the file and then the extra sink sequentially. The caller
+owns and must flush/close the extra sink.
 
-`main` activates logging for its repository and any dependency repositories it would also like to have output in its logstream. `main` also dictates at which level each subpackage logs.
+`buffered=true` enables an existing 256-item `ChannelWriter` queue for **already
+formatted bytes**. Formatting and queue admission still happen under xlog's global
+lock. A full queue blocks every package. With no extra sink, an 8 KiB file buffer
+exists even with `buffered=false`; that path has no periodic flush without the
+worker. `PackageLogger.Flush` does not drain the worker or guarantee disk durability.
 
-### There is _one_ output stream, and it is an `io.Writer` composed with a formatter
+There are open shutdown, resource ownership, and error reporting bugs in this
+implementation (F-02/F-03/F-04). Stop all producers before closing; do not write
+to a stopped `ChannelWriter`. The [roadmap](ROADMAP.md#optional-buffered-ingress)
+defines the proposed lifecycle and record-ingress design.
 
-Splitting streams is probably not the job of your program, but rather, your log aggregation framework. If you must split output streams, again, `main` configures this and you can write a very simple two-output struct that satisfies io.Writer.
+## Cloud Logging
 
-Fancy colorful formatting and JSON output are beyond the scope of a basic logging framework -- they're application/log-collector dependant. These are, at best, provided as options, but more likely, provided by your application.
+`stackdriver.NewFormatter(os.Stdout, "app")` installs through `xlog.SetFormatter`.
+It writes locally; a collector must forward records. Its current serializer can
+silently drop ordinary strings and change their types (F-01). Review that finding
+before adopting this formatter. JSON output is also available through
+`xlog.NewJSONFormatter`, with a different schema.
 
-### Log objects are an interface
+## Development
 
-An object knows best how to print itself. Log objects can collect more interesting metadata if they wish, however, because text isn't going away anytime soon, they must all be marshalable to text. The simplest log object is a string, which returns itself. If you wish to do more fancy tricks for printing your log objects, see also JSON output -- introspect and write a formatter which can handle your advanced log interface. Making strings is the only thing guaranteed.
+The module and CI select Go 1.27 from `go.mod`. The modernization keeps
+`encoding/json` semantics; Go 1.27 does not require switching to `encoding/json/v2`.
+See the official [Go 1.27 release notes](https://go.dev/doc/go1.27).
 
-### Log levels have specific meanings:
+```sh
+make test
+go test -race ./...
+make lint
+govulncheck ./...
+```
 
-- `CRITICAL`: Unrecoverable. Must fail.
-- `ERROR`: Data has been lost, a request has failed for a bad reason, or a required resource has been lost
-- `WARNING`: (Hopefully) Temporary conditions that may cause errors, but may work fine. A replica disappearing (that may reconnect) is a warning.
-- `NOTICE`: Normal, but important (uncommon) log information.
-- `INFO`: Normal, working log information, everything is fine, but helpful notices for auditing or common operations.
-- `TRACE`: Anything goes, from logging every function call as part of a common operation, to tracing execution of a query.
-- `DEBUG`: Print debug data.
+`make tools` installs the coverage reporter and pinned linter; `make covtest`
+writes coverage artifacts. The current CI coverage status uses a strict `> 80%`
+comparison. See F-10 for coverage/CI limitations. No generated mocks or service
+entry point exist in this repository.

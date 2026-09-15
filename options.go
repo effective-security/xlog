@@ -1,6 +1,8 @@
 package xlog
 
 const (
+	// DefaultMaxLogMessageLength is the byte limit installed by Config.Apply
+	// when MaxLogLength is zero. Constructors do not call Apply automatically.
 	DefaultMaxLogMessageLength = 2 * 1024
 )
 
@@ -49,19 +51,31 @@ func FormatPrintEmpty(val bool) FormatterOption {
 	}
 }
 
+// FormatMaxLogLength limits rendered text KV values or a JSON plain message in
+// bytes. Zero selects the default on Apply; negative values disable these limits.
+// It does not limit whole records, JSON KV values, or Stackdriver output.
 func FormatMaxLogLength(val int) FormatterOption {
 	return func(o *Config) {
 		o.MaxLogLength = val
 	}
 }
 
+// Config holds formatter options. Support differs by formatter; see
+// Documentation/codemap.md for the behavior matrix.
 type Config struct {
-	PrintEmpty   bool
-	SkipLevel    bool
-	SkipTime     bool
-	WithCaller   bool
-	WithColor    bool
+	// PrintEmpty includes empty values in text output; JSON always includes them.
+	PrintEmpty bool
+	// SkipLevel omits the level in text and JSON output.
+	SkipLevel bool
+	// SkipTime omits the timestamp.
+	SkipTime bool
+	// WithCaller requests the caller's function name.
+	WithCaller bool
+	// WithColor enables ANSI colors in PrettyFormatter.
+	WithColor bool
+	// WithLocation requests the caller's file and line.
 	WithLocation bool
+	// MaxLogLength limits selected values/messages, not total record size.
 	MaxLogLength int
 }
 

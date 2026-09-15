@@ -116,10 +116,13 @@ func ParseLevel(s string) (LogLevel, error) {
 	return CRITICAL, errors.New("unable to parse log level: " + s)
 }
 
-// RepoLogger specifies a map of repo => PackageLogger
+// RepoLogger maps package names within one repository to their registered loggers.
+// Handles returned by GetRepoLogger alias the registry; do not mutate or iterate
+// them concurrently with logger registration or configuration.
 type RepoLogger map[string]*PackageLogger
 
-// OnErrorFn allows to be called when an error is logged in a package
+// OnErrorFn observes ERROR calls, including filtered ones. It runs synchronously
+// under the global logger lock and must not call xlog or the hijacked log logger.
 type OnErrorFn func(pkg string)
 
 type loggerStruct struct {
@@ -132,8 +135,8 @@ type loggerStruct struct {
 // logger is the global logger
 var logger = new(loggerStruct)
 
-// OnError allows to specify a callback for ERROR levels.
-// This is useful to reports metrics on ERROR in a package
+// OnError installs an ERROR observer, or removes it when fn is nil.
+// The callback must be fast and must not re-enter xlog; see OnErrorFn.
 func OnError(fn OnErrorFn) {
 	logger.Lock()
 	defer logger.Unlock()
@@ -141,7 +144,8 @@ func OnError(fn OnErrorFn) {
 }
 
 // SetGlobalLogLevel sets the log level for all packages in all repositories
-// registered with PackageLogger.
+// already registered with NewPackageLogger. It does not set the default for
+// future registrations or update loggers derived by WithValues.
 func SetGlobalLogLevel(l LogLevel) {
 	logger.Lock()
 	defer logger.Unlock()
@@ -221,7 +225,8 @@ func (r RepoLogger) SetLogLevel(m map[string]LogLevel) {
 	}
 }
 
-// SetFormatter sets the formatting function for all logs.
+// SetFormatter replaces the global formatter. Nil disables output. The old
+// formatter is neither flushed nor closed; callers own its destination lifecycle.
 func SetFormatter(f Formatter) {
 	logger.Lock()
 	defer logger.Unlock()
@@ -237,6 +242,8 @@ func GetFormatter() Formatter {
 
 // NewPackageLogger creates a package logger object.
 // This should be defined as a global var in your package, referencing your repo.
+// Repeated calls for the same repo and pkg return the same pointer. New loggers
+// start at INFO, regardless of earlier global or repository level settings.
 func NewPackageLogger(repo string, pkg string) (p *PackageLogger) {
 	logger.Lock()
 	defer logger.Unlock()
@@ -259,7 +266,7 @@ func NewPackageLogger(repo string, pkg string) (p *PackageLogger) {
 	return
 }
 
-// getRepoLogger wraps the call to capnlog.GetRepoLogger
+// getRepoLogger adds repository context to registry lookup errors.
 func getRepoLogger(repo string) (RepoLogger, error) {
 	repoLogger, err := GetRepoLogger(repo)
 	if err != nil {
@@ -268,14 +275,15 @@ func getRepoLogger(repo string) (RepoLogger, error) {
 	return repoLogger, nil
 }
 
-// SetRepoLogLevel sets the log level for all packages in repo logger
+// SetRepoLogLevel updates registered packages in repo; unknown repositories are ignored.
 func SetRepoLogLevel(repo string, l LogLevel) {
 	if logger, err := getRepoLogger(repo); err == nil {
 		logger.SetRepoLogLevel(l)
 	}
 }
 
-// SetPackageLogLevel sets the log level for a package in repo logger
+// SetPackageLogLevel updates a registered package. An empty pkg or "*" selects
+// all registered packages in repo. Unknown repositories and packages are ignored.
 func SetPackageLogLevel(repo, pkg string, l LogLevel) {
 	if pkg == "" || pkg == "*" {
 		SetRepoLogLevel(repo, l)
@@ -309,7 +317,8 @@ func SetRepoLevels(cfg []RepoLogLevel) {
 	}
 }
 
-// SetRepoLevel sets repo log level
+// SetRepoLevel applies a configuration entry. Invalid levels currently become
+// CRITICAL because parsing errors are ignored; validate with ParseLevel first.
 func SetRepoLevel(cfg RepoLogLevel) {
 	l, _ := ParseLevel(cfg.Level)
 	if cfg.Repo == "*" {

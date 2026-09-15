@@ -77,7 +77,7 @@ func TestChannelWriter_Writes(t *testing.T) {
 	defer cw.Stop()
 	numMessages := 400
 	exp := make([][]byte, 0, numMessages)
-	for i := 0; i < numMessages; i++ {
+	for i := range numMessages {
 		w := []byte(fmt.Sprintf("message %d", i))
 		wcopy := append([]byte(nil), w...)
 		exp = append(exp, wcopy)

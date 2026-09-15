@@ -50,6 +50,9 @@ var levelsToSeverity = map[xlog.LogLevel]severity{
 	xlog.CRITICAL: severityCritical,
 }
 
+// MaxLogMessageLength limits plain messages in bytes before appending "...".
+// It does not limit KV fields. Configure it before logging; negative values panic
+// when formatting a message. This is independent of xlog.FormatMaxLogLength.
 var MaxLogMessageLength = 2 * 1024
 
 // formatter provides logs format for StackDriver
@@ -63,12 +66,10 @@ type formatter struct {
 // as Stackdriver-compatible JSON. logName sets the Stackdriver log name.
 func NewFormatter(w io.Writer, logName string) xlog.Formatter {
 	return &formatter{
-		w:       bufio.NewWriter(w),
-		logName: logName,
-		Config: xlog.Config{
-			WithCaller: true,
-			SkipTime:   false,
-		},
+		w:          bufio.NewWriter(w),
+		logName:    logName,
+		WithCaller: true,
+		SkipTime:   false,
 	}
 }
 
@@ -164,7 +165,9 @@ type reportLocation struct {
 	Function   string `json:"function,omitempty"`
 }
 
-// String returns a JSON-encoded, HTML-escaped string representation of the value.
+// String returns JSON without HTML escaping. Errors without json.Marshaler
+// support use their detailed text. Encoding failures are ignored and return
+// an empty string. This helper is separate from the formatter's KV encoding.
 func String(value any) string {
 	if err, ok := value.(error); ok {
 		// if error does not support json.Marshaler,

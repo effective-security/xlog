@@ -1,7 +1,3 @@
-// Package xlog has slight modifications on the original code,
-// adding ability to specify log lever per package,
-// and exposing Logger interface, not an implementation structure.
-//
 // # Copyright 2018, Denis Issoupov
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,15 +15,15 @@ package xlog
 
 import "context"
 
-// Logger interface for generic logger
+// Logger combines structured and printf-style logging.
 type Logger interface {
 	KeyValueLogger
 	StdLogger
 }
 
-// KeyValueLogger interface for generic logger
+// KeyValueLogger logs structured records with alternating string keys and values.
 type KeyValueLogger interface {
-	// KV logs entries in "key1=value1, ..., keyN=valueN" format
+	// KV logs structured entries at level using the configured formatter.
 	KV(level LogLevel, entries ...any)
 
 	// ContextKV logs entries in "key1=value1, ..., keyN=valueN" format,
@@ -35,34 +31,50 @@ type KeyValueLogger interface {
 	// ContextWithKV method can be used to add extra values to context
 	ContextKV(ctx context.Context, level LogLevel, entries ...any)
 
-	// WithValues adds some key-value pairs of context to a logger.
-	// See Info for documentation on how key/value pairs work.
+	// WithValues derives a logger with additional alternating string keys and values.
 	WithValues(keysAndValues ...any) KeyValueLogger
 }
 
-// StdLogger interface for generic logger
+// StdLogger provides plain and printf-style logging. PackageLogger fatal methods
+// exit and panic methods panic; NilLogger deliberately discards fatal calls.
 type StdLogger interface {
+	// Fatal logs a critical message and terminates the process for PackageLogger.
 	Fatal(args ...any)
+	// Fatalf formats a critical message and terminates the process for PackageLogger.
 	Fatalf(format string, args ...any)
 
+	// Panic logs a critical message and panics.
 	Panic(args ...any)
+	// Panicf formats a critical message and panics.
 	Panicf(format string, args ...any)
 
+	// Info logs plain entries at INFO.
 	Info(entries ...any)
+	// Infof logs a printf-style message at INFO.
 	Infof(format string, args ...any)
 
+	// Error logs plain entries at ERROR.
 	Error(entries ...any)
+	// Errorf logs a printf-style message at ERROR.
 	Errorf(format string, args ...any)
 
+	// Warning logs plain entries at WARNING.
 	Warning(entries ...any)
+	// Warningf logs a printf-style message at WARNING.
 	Warningf(format string, args ...any)
 
+	// Notice logs plain entries at NOTICE.
 	Notice(entries ...any)
+	// Noticef logs a printf-style message at NOTICE.
 	Noticef(format string, args ...any)
 
+	// Debug logs plain entries at DEBUG, the most verbose threshold.
 	Debug(entries ...any)
+	// Debugf logs a printf-style message at DEBUG.
 	Debugf(format string, args ...any)
 
+	// Trace logs plain entries at TRACE, below DEBUG in verbosity.
 	Trace(entries ...any)
+	// Tracef logs a printf-style message at TRACE.
 	Tracef(format string, args ...any)
 }

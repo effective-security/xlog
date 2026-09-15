@@ -1,4 +1,3 @@
-// Package logrotate implements additional functionality for io writers & closers
 package logrotate
 
 // Copyright 2018 salesforce.com
@@ -22,33 +21,30 @@ import (
 	"time"
 )
 
-// ChannelWriter provides an io.Writer that defers the write to a background
-// go routine. You might for example use this for a log.Logger destination
+// ChannelWriter copies writes into a bounded queue consumed by one goroutine.
+// A full queue blocks producers. Destination write and flush errors are ignored.
+// Quiesce all producers before Stop and never write afterward. See FINDINGS.md
+// for shutdown limitations. A ChannelWriter must not be copied after first use.
 type ChannelWriter struct {
 	write    chan []byte
 	stop     chan bool
 	stopped  chan bool
-	running  uint32
+	running  atomic.Bool
 	buffPool sync.Pool
 }
 
-// NewChannelWriter provides an instance of io.Writer that
-// forwards all write over a channel to a background go routine
-// that does the actual write, this can stop disk I/O cluttering
-// up app processing. [at the potential risk of loosing some
-// writes during a crash]
-//
-// dest is the io.Writer that we're wrapping
-// bufferDepth controls the size of the channel buffer (if this buffer fills, it'll start to block the writers)
-// flushInterval if the writer is a bufio.Writer (or any other writer with a Flush() error method), then we'll flush at this interval when there are no writes.
-// you can pass zero for this if you don't want this behavior
+// NewChannelWriter starts a worker that writes to dest. bufferDepth is the
+// number of queued byte slices, not a byte or memory limit; zero is unbuffered
+// and a negative depth panics. The worker calls Flush() error on dest at positive
+// flushInterval ticks and on Stop, when supported. Zero disables periodic flush.
+// Queued writes may be lost on a crash. The destination is never closed.
 func NewChannelWriter(dest io.Writer, bufferDepth int, flushInterval time.Duration) *ChannelWriter {
 	cw := ChannelWriter{
 		write:   make(chan []byte, bufferDepth),
 		stop:    make(chan bool),
 		stopped: make(chan bool),
-		running: 1,
 	}
+	cw.running.Store(true)
 	cw.buffPool.New = func() any {
 		return make([]byte, 0, 256)
 	}
@@ -56,18 +52,16 @@ func NewChannelWriter(dest io.Writer, bufferDepth int, flushInterval time.Durati
 	return &cw
 }
 
-// IsStopped returns true if this ChannelWriter has been stopped
+// IsStopped reports whether stopping has begun, not whether draining has finished.
 func (cw *ChannelWriter) IsStopped() bool {
-	return atomic.LoadUint32(&cw.running) == 0
+	return !cw.running.Load()
 }
 
-// Stop tells the background writer to stop processing [if its running]
-// Once stopped you can not restart it, it is expected that you throw
-// this away once stopped.
-// Stop will drain the current contents of the write channel before stopping
-// Stop() will block until the channel is drained and the output flushed.
+// Stop requests shutdown. The first caller waits for queued writes and the
+// destination's Flush, if supported; subsequent callers return immediately.
+// Stop can block indefinitely on a stalled destination. Stop producers first.
 func (cw *ChannelWriter) Stop() {
-	if atomic.CompareAndSwapUint32(&cw.running, 1, 0) {
+	if cw.running.CompareAndSwap(true, false) {
 		cw.stop <- true
 		<-cw.stopped // wait til we've finished draining the queue and have flushed the output
 	}

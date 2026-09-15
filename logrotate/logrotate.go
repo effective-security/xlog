@@ -35,11 +35,15 @@ type logrotator struct {
 }
 
 // Initialize creates a lumberjack log rotator and redirects logs output to it.
-// To ensure that any queued/buffered but unwritten log entries are flushed to disk
-// call Stop() on the returned stopper before exiting the process.
-// Once stopped, you can't resume the logger, you need to create a new one.
-// When extraSink is non-nil (e.g. os.Stdout), logs are written to both the file and extraSink
-// simultaneously (no buffering in front of the file so both see every write immediately).
+// maxAge is retention in days; maxSize is maximum file size in lumberjack MB.
+// The output is logFolder/baseFilename.log. Directory creation is checked, but
+// file opening is lazy, so success does not prove that later writes will succeed.
+// buffered enables a 256-item byte queue with a one-second flush interval.
+// Without extraSink, an 8 KiB file buffer is used even when buffered is false.
+// With extraSink, io.MultiWriter writes to the file and then extraSink; a file
+// error prevents that write from reaching extraSink, which is not flushed here.
+// Stop logging before calling Close on the returned io.Closer. Close restores
+// the prior formatter, but has known drain/error/resource issues (FINDINGS.md).
 func Initialize(logFolder, baseFilename string, maxAge, maxSize int, buffered bool, extraSink io.Writer) (io.Closer, error) {
 	err := os.MkdirAll(logFolder, 0755)
 	if err != nil {
@@ -81,14 +85,17 @@ func (c *logrotator) destination() io.Writer {
 	return c.logger
 }
 
-// Close will ensure that queued/buffered but unwritten log entries are flushed to disk
+// Close attempts to flush buffers, restore the old formatter, and stop the
+// worker. It returns an error on a repeated call. Calls must be serialized;
+// destination errors and durable storage are not guaranteed by this API.
 func (c *logrotator) Close() error {
 	if c.closed {
 		return errors.New("already closed")
 	}
 	c.closed = true
 
-	// Flush file buffer so file gets all log data when extraSink was used
+	// This buffer exists only without extraSink. With a worker, this flush can
+	// race with writes; the required shutdown ordering is tracked in FINDINGS.md.
 	if c.fileBuf != nil {
 		_ = c.fileBuf.Flush()
 	}

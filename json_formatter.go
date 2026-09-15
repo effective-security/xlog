@@ -25,13 +25,11 @@ import (
 // NewJSONFormatter returns a new JSONFormatter that outputs log entries in JSON format.
 func NewJSONFormatter(w io.Writer) Formatter {
 	f := &JSONFormatter{
-		w: bufio.NewWriter(w),
-		Config: Config{
-			WithCaller:   true,
-			SkipTime:     false,
-			WithLocation: false,
-			WithColor:    false,
-		},
+		w:            bufio.NewWriter(w),
+		WithCaller:   true,
+		SkipTime:     false,
+		WithLocation: false,
+		WithColor:    false,
 	}
 	f.encoder = json.NewEncoder(f.w)
 	f.encoder.SetEscapeHTML(false)
