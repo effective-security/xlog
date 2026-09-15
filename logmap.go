@@ -17,6 +17,7 @@ package xlog
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/cockroachdb/errors"
 )
@@ -132,8 +133,13 @@ type loggerStruct struct {
 	repoMap   map[string]RepoLogger
 	formatter Formatter
 	current   *formatterRegistration
-	output    sync.Mutex
-	onError   OnErrorFn
+	// output serializes formatters that are not safe for concurrent use.
+	// Formatters delivering through a Sink share it instead, so producers
+	// render records in parallel and never hold it across queue admission.
+	output sync.RWMutex
+	// onError is read on every ERROR call, including filtered ones, so it is
+	// published atomically instead of under the configuration lock.
+	onError atomic.Pointer[OnErrorFn]
 }
 
 // logger is the global logger
@@ -142,9 +148,50 @@ var logger = new(loggerStruct)
 // OnError installs an ERROR observer, or removes it when fn is nil.
 // The callback runs synchronously without holding configuration or output locks.
 func OnError(fn OnErrorFn) {
-	logger.Lock()
-	defer logger.Unlock()
-	logger.onError = fn
+	if fn == nil {
+		logger.onError.Store(nil)
+		return
+	}
+	logger.onError.Store(&fn)
+}
+
+// currentOnError returns the installed ERROR observer without taking a lock.
+func currentOnError() OnErrorFn {
+	if observer := logger.onError.Load(); observer != nil {
+		return *observer
+	}
+	return nil
+}
+
+// ConcurrentFormatter reports whether a formatter renders and delivers records
+// without external serialization. PackageLogger stops serializing output for
+// formatters that answer true, so their records are ordered by admission rather
+// than by call order, preserving per-goroutine order. Formatters that embed
+// Output answer true exactly when a Sink owns their destination.
+type ConcurrentFormatter interface {
+	Formatter
+	// Concurrent reports whether concurrent Format/FormatKV calls are safe.
+	Concurrent() bool
+}
+
+// acquireOutput takes the output lock that f requires and reports whether it is
+// shared. A concurrent formatter only needs to exclude formatters installed
+// before or after it, so it takes the lock for reading.
+func acquireOutput(f Formatter) bool {
+	if concurrent, ok := f.(ConcurrentFormatter); ok && concurrent.Concurrent() {
+		logger.output.RLock()
+		return true
+	}
+	logger.output.Lock()
+	return false
+}
+
+func releaseOutput(shared bool) {
+	if shared {
+		logger.output.RUnlock()
+		return
+	}
+	logger.output.Unlock()
 }
 
 // SetGlobalLogLevel sets the log level for all packages in all repositories
@@ -187,7 +234,7 @@ func (r RepoLogger) SetRepoLogLevel(l LogLevel) {
 
 func (r RepoLogger) setRepoLogLevelInternal(l LogLevel) {
 	for _, v := range r {
-		v.level = l
+		v.level.Store(int32(l))
 	}
 }
 
@@ -225,7 +272,7 @@ func (r RepoLogger) SetLogLevel(m map[string]LogLevel) {
 		if !ok {
 			continue
 		}
-		l.level = v
+		l.level.Store(int32(v))
 	}
 }
 
@@ -307,11 +354,12 @@ func NewPackageLogger(repo string, pkg string) (p *PackageLogger) {
 	}
 	p, pok := r[pkg]
 	if !pok {
-		r[pkg] = &PackageLogger{
-			pkg:   pkg,
-			level: INFO,
+		created := &PackageLogger{
+			pkg: pkg,
 		}
-		p = r[pkg]
+		created.level.Store(int32(INFO))
+		r[pkg] = created
+		p = created
 	}
 	return
 }
@@ -345,7 +393,7 @@ func SetPackageLogLevel(repo, pkg string, l LogLevel) {
 		defer logger.Unlock()
 
 		if p, ok := pkgLogger[pkg]; ok {
-			p.level = l
+			p.level.Store(int32(l))
 		}
 	}
 }
@@ -392,7 +440,7 @@ func GetRepoLevels() []RepoLogLevel {
 			list = append(list, RepoLogLevel{
 				Repo:    repo,
 				Package: pkg,
-				Level:   rl.level.String(),
+				Level:   LogLevel(rl.level.Load()).String(),
 			})
 		}
 	}

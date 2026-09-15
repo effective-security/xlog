@@ -15,8 +15,6 @@
 package xlog
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 	"time"
@@ -24,33 +22,28 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
-// NewJSONFormatter returns a new JSONFormatter that outputs log entries in JSON format.
-func NewJSONFormatter(w io.Writer) Formatter {
-	f := &JSONFormatter{
-		w:            newFormatterBuffer(w),
-		dest:         w,
-		WithCaller:   true,
-		SkipTime:     false,
-		WithLocation: false,
-		WithColor:    false,
-	}
-	f.encoder = json.NewEncoder(f.w)
-	f.encoder.SetEscapeHTML(false)
+// NewJSONFormatter returns a JSONFormatter writing one JSON object per record
+// to w. Options apply before the destination is bound, so WithSink takes effect
+// immediately.
+func NewJSONFormatter(w io.Writer, ops ...FormatterOption) Formatter {
+	f := &JSONFormatter{}
+	f.WithCaller = true
+	f.MaxLogLength = DefaultMaxLogMessageLength
+	f.Apply(ops...)
+	f.Bind(w, f.sink)
 	return f
 }
 
 // JSONFormatter formats log entries as JSON objects. Do not copy it after first use.
 type JSONFormatter struct {
 	Config
-	formatterErrors
-	dest    io.Writer
-	w       *bufio.Writer
-	encoder *json.Encoder
+	Output
 }
 
 // Options allows to configure formatter behavior
 func (c *JSONFormatter) Options(ops ...FormatterOption) Formatter {
 	c.Apply(ops...)
+	c.Rebind(c.sink)
 	return c
 }
 
@@ -97,24 +90,14 @@ func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, kv map[string]
 		kv["msg"] = msg
 	}
 
-	c.record(errors.WithMessage(c.encoder.Encode(kv), "unable to encode or write JSON log record"))
-	c.flushBuffer()
-}
-
-// Flush the logs
-func (c *JSONFormatter) Flush() {
-	_ = c.FlushError()
-}
-
-// FlushError flushes formatter and downstream buffers and reports the first error.
-func (c *JSONFormatter) FlushError() error {
-	c.flushBuffer()
-	c.flushDestination(c.dest)
-	return c.Err()
-}
-
-func (c *JSONFormatter) flushBuffer() {
-	c.record(errors.WithMessage(c.w.Flush(), "unable to write JSON log record"))
+	record := c.Buffer()
+	if err := record.Encoder().Encode(kv); err != nil {
+		// Reject the whole record instead of emitting a partial JSON line.
+		c.Discard(record)
+		c.RecordError(errors.WithMessage(err, "unable to encode JSON log record"))
+		return
+	}
+	c.Emit(record)
 }
 
 func kvToMap(kvList ...any) map[string]any {

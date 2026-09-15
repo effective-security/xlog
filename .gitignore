@@ -11,7 +11,12 @@ bin/
 .docker/
 .DS_Store
 .codebase-memory
+CLAUDE.md
+
+# Generated benchmark output; regenerate with Documentation/benchmarks/run.sh
+Documentation/benchmarks/results/
 
 debug
 debug.test
 
+AGENT.md

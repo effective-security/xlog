@@ -48,7 +48,8 @@ type logrotator struct {
 // are reported by the returned closer. buffered enables a 256-item byte queue
 // with a one-second flush interval. Without extraSink, an 8 KiB file buffer is
 // used even when buffered is false; explicit logger flushing makes it visible.
-// An extra sink is flushed when supported, but is never closed by this package.
+// An extra destination is flushed when supported, but never closed by this
+// package. It is a second io.Writer, unrelated to xlog.Sink.
 // Close removes this formatter override, waits for admitted logging calls,
 // drains, flushes, and closes the owned file. Overrides may close in any order.
 // Concurrent and repeated Close calls wait and return the same result.

@@ -15,7 +15,6 @@
 package xlog
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -28,8 +27,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/cockroachdb/errors"
 )
 
 // Formatter formats records and writes them to a destination. PackageLogger
@@ -55,31 +52,31 @@ type Formatter interface {
 var TimeNowFn = time.Now
 
 // NewDefaultFormatter returns the default text formatter, a PrettyFormatter.
-func NewDefaultFormatter(out io.Writer) Formatter {
-	return NewPrettyFormatter(out)
+func NewDefaultFormatter(out io.Writer, ops ...FormatterOption) Formatter {
+	return NewPrettyFormatter(out, ops...)
 }
 
-// NewStringFormatter returns string-based formatter
-func NewStringFormatter(w io.Writer) Formatter {
-	return &StringFormatter{
-		w:          newFormatterBuffer(w),
-		dest:       w,
-		WithCaller: true,
-		SkipTime:   false,
-	}
+// NewStringFormatter returns a text formatter writing to w. Options apply
+// before the destination is bound, so WithSink takes effect immediately.
+func NewStringFormatter(w io.Writer, ops ...FormatterOption) Formatter {
+	s := &StringFormatter{}
+	s.WithCaller = true
+	s.MaxLogLength = DefaultMaxLogMessageLength
+	s.Apply(ops...)
+	s.Bind(w, s.sink)
+	return s
 }
 
 // StringFormatter renders text records. Do not copy it after first use.
 type StringFormatter struct {
 	Config
-	formatterErrors
-	w    *bufio.Writer
-	dest io.Writer
+	Output
 }
 
 // Options allows to configure formatter behavior
 func (s *StringFormatter) Options(ops ...FormatterOption) Formatter {
 	s.Apply(ops...)
+	s.Rebind(s.sink)
 	return s
 }
 
@@ -95,16 +92,18 @@ func (s *StringFormatter) Format(pkg string, l LogLevel, depth int, entries ...a
 }
 
 func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...any) {
+	record := s.Buffer()
+	w := record.Buffer()
 	if !s.SkipTime {
 		now := TimeNowFn().UTC()
-		_, _ = s.w.WriteString("time=")
-		_, _ = s.w.WriteString(now.Format(time.RFC3339))
-		_, _ = s.w.WriteString(" ")
+		_, _ = w.WriteString("time=")
+		_, _ = w.WriteString(now.Format(time.RFC3339))
+		_, _ = w.WriteString(" ")
 	}
 	if !s.SkipLevel {
-		_, _ = s.w.WriteString("level=")
-		_, _ = s.w.WriteString(l.Char())
-		_ = s.w.WriteByte(' ')
+		_, _ = w.WriteString("level=")
+		_, _ = w.WriteString(l.Char())
+		_ = w.WriteByte(' ')
 	}
 
 	params := writeEntriesParams{
@@ -116,8 +115,8 @@ func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		escape:       escape,
 		printEmpty:   s.PrintEmpty,
 	}
-	writeEntries(s.w, &params, entries...)
-	s.flushBuffer()
+	writeEntries(w, &params, entries...)
+	s.Emit(record)
 }
 
 type writeEntriesParams struct {
@@ -131,7 +130,7 @@ type writeEntriesParams struct {
 	printEmpty   bool
 }
 
-func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...any) {
+func writeEntries(w *bytes.Buffer, p *writeEntriesParams, entries ...any) {
 	if p.pkg != "" {
 		_, _ = w.WriteString("pkg=")
 		_, _ = w.WriteString(p.pkg)
@@ -181,46 +180,28 @@ func writeEntries(w *bufio.Writer, p *writeEntriesParams, entries ...any) {
 	}
 }
 
-// Flush the logs
-func (s *StringFormatter) Flush() {
-	_ = s.FlushError()
-}
-
-// FlushError flushes formatter and downstream buffers and reports the first error.
-func (s *StringFormatter) FlushError() error {
-	s.flushBuffer()
-	s.flushDestination(s.dest)
-	return s.Err()
-}
-
-func (s *StringFormatter) flushBuffer() {
-	s.record(errors.WithMessage(s.w.Flush(), "unable to write text log record"))
-}
-
-// NewPrettyFormatter returns an instance of PrettyFormatter
-func NewPrettyFormatter(w io.Writer) Formatter {
-	return &PrettyFormatter{
-		w:            newFormatterBuffer(w),
-		dest:         w,
-		WithCaller:   true,
-		SkipTime:     false,
-		WithLocation: false,
-		WithColor:    false,
-	}
+// NewPrettyFormatter returns a readable text formatter writing to w. Options
+// apply before the destination is bound, so WithSink takes effect immediately.
+func NewPrettyFormatter(w io.Writer, ops ...FormatterOption) Formatter {
+	c := &PrettyFormatter{}
+	c.WithCaller = true
+	c.MaxLogLength = DefaultMaxLogMessageLength
+	c.Apply(ops...)
+	c.Bind(w, c.sink)
+	return c
 }
 
 // PrettyFormatter renders readable text with optional colors. Do not copy it
 // after first use.
 type PrettyFormatter struct {
 	Config
-	formatterErrors
-	w    *bufio.Writer
-	dest io.Writer
+	Output
 }
 
 // Options allows to configure formatter behavior
 func (c *PrettyFormatter) Options(ops ...FormatterOption) Formatter {
 	c.Apply(ops...)
+	c.Rebind(c.sink)
 	return c
 }
 
@@ -237,19 +218,21 @@ func (c *PrettyFormatter) Format(pkg string, l LogLevel, depth int, entries ...a
 
 // Format log entry string to the stream
 func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool, entries ...any) {
+	record := c.Buffer()
+	w := record.Buffer()
 	if !c.SkipTime {
 		now := TimeNowFn()
 		ts := now.Format("2006-01-02 15:04:05")
-		_, _ = c.w.WriteString(ts)
+		_, _ = w.WriteString(ts)
 		ms := now.Nanosecond() / 1000
-		_, _ = fmt.Fprintf(c.w, ".%06d ", ms)
+		_, _ = fmt.Fprintf(w, ".%06d ", ms)
 	}
 	if c.WithColor {
-		_, _ = c.w.Write(LevelColors[l])
+		_, _ = w.Write(LevelColors[l])
 	}
 	if !c.SkipLevel {
-		_, _ = c.w.WriteString(l.Char())
-		_, _ = c.w.WriteString(" | ")
+		_, _ = w.WriteString(l.Char())
+		_, _ = w.WriteString(" | ")
 	}
 	params := writeEntriesParams{
 		pkg:          pkg,
@@ -262,25 +245,9 @@ func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		printEmpty:   c.PrintEmpty,
 	}
 
-	writeEntries(c.w, &params, entries...)
+	writeEntries(w, &params, entries...)
 
-	c.flushBuffer()
-}
-
-// Flush the logs
-func (c *PrettyFormatter) Flush() {
-	_ = c.FlushError()
-}
-
-// FlushError flushes formatter and downstream buffers and reports the first error.
-func (c *PrettyFormatter) FlushError() error {
-	c.flushBuffer()
-	c.flushDestination(c.dest)
-	return c.Err()
-}
-
-func (c *PrettyFormatter) flushBuffer() {
-	c.record(errors.WithMessage(c.w.Flush(), "unable to write pretty log record"))
+	c.Emit(record)
 }
 
 // ColorOff resets ANSI color to terminal default.
@@ -334,6 +301,11 @@ func (*NilFormatter) Format(_ string, _ LogLevel, _ int, _ ...any) {
 // Flush is included so that the interface is complete, but is a no-op.
 func (*NilFormatter) Flush() {
 	// noop
+}
+
+// Concurrent reports that discarding records needs no output serialization.
+func (*NilFormatter) Concurrent() bool {
+	return true
 }
 
 func (c *Config) flatten(kvList ...any) []any {
@@ -509,37 +481,63 @@ func EscapedString(value any) string {
 	return jsonEncode(value)
 }
 
+// callerInfo is one resolved call site.
+type callerInfo struct {
+	name string
+	file string
+	line int
+}
+
+// callerCache memoizes program counter resolution. Unwinding the stack and
+// trimming the function and file names dominates the cost of a small record,
+// while the number of distinct logging call sites is bounded by the program.
+var callerCache sync.Map // uintptr -> callerInfo
+
 // Caller returns the function name, file, and line number of the caller at the given depth.
 func Caller(depth int) (name string, file string, line int) {
-	pc, file, line, ok := runtime.Caller(depth)
-
-	if !ok {
-		file = "???"
-		line = 1
-	} else {
-		slash := strings.LastIndex(file, "/")
-		if slash >= 0 {
-			file = file[slash+1:]
-		}
+	var pcs [1]uintptr
+	// runtime.Callers counts itself, so depth+1 selects runtime.Caller's frame.
+	if runtime.Callers(depth+1, pcs[:]) < 1 {
+		return "func", "???", 1
 	}
-	if line < 0 {
-		line = 0 // not a real line number
+	if cached, ok := callerCache.Load(pcs[0]); ok {
+		info := cached.(callerInfo)
+		return info.name, info.file, info.line
 	}
+	info := resolveCaller(pcs[0])
+	callerCache.Store(pcs[0], info)
+	return info.name, info.file, info.line
+}
 
-	details := runtime.FuncForPC(pc)
-	if ok && details != nil {
-		name := path.Base(details.Name())
-		name = removePart(name, "[", "]")
-		name = removePart(name, "(", ")")
-
-		// remove package name
-		idx := strings.Index(name, ".")
-		if idx >= 0 {
-			name = strings.TrimLeft(name[idx+1:], ".")
-		}
-		return name, file, line
+// resolveCaller renders one program counter the way Caller reports it.
+func resolveCaller(pc uintptr) callerInfo {
+	frame, _ := runtime.CallersFrames([]uintptr{pc}).Next()
+	info := callerInfo{
+		name: "func",
+		file: frame.File,
+		line: frame.Line,
 	}
-	return "func", file, line
+	if info.file == "" {
+		info.file = "???"
+	} else if slash := strings.LastIndex(info.file, "/"); slash >= 0 {
+		info.file = info.file[slash+1:]
+	}
+	if info.line < 0 {
+		info.line = 0 // not a real line number
+	}
+	if frame.Function == "" {
+		return info
+	}
+	name := path.Base(frame.Function)
+	name = removePart(name, "[", "]")
+	name = removePart(name, "(", ")")
+
+	// remove package name
+	if idx := strings.Index(name, "."); idx >= 0 {
+		name = strings.TrimLeft(name[idx+1:], ".")
+	}
+	info.name = name
+	return info
 }
 
 func removePart(val, open, close string) string {

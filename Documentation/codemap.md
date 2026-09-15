@@ -15,14 +15,17 @@ Paths below are relative to the repository root (one directory above this file).
 | --- | --- | --- |
 | Public logging interfaces | `xlog.go` | `Logger`, `StdLogger`, `KeyValueLogger`; `nillogger_test.go` |
 | Registration, levels, repository configuration | `logmap.go` | `NewPackageLogger`, `LogLevel`, `ParseLevel`, `RepoLogger`, `RepoLogLevel`, level setters, `GetRepoLevels`; `logmap_test.go` |
-| Global formatter and ERROR observer | `logmap.go` | `SetFormatter`, `InstallFormatter`, `GetFormatter`, `OnError`, `OnErrorFn`; `xlog_test.go`, `ownership_extra_test.go` |
-| Logging, filtering, fatal/panic, attached fields | `packagelogger.go` | `PackageLogger`, `KV`, `ContextKV`, `WithValues`, `Log`, `Logf`, `LevelAt`, `Flush`, `FlushError`, `ExitFunc`; `xlog_test.go`, `ownership_extra_test.go` |
-| Formatter errors and downstream flush | `formatter_errors.go` | `ErrorFormatter`, `FlushFormatter`; `formatter_errors_extra_test.go` |
+| Global formatter, output locking, ERROR observer | `logmap.go` | `SetFormatter`, `InstallFormatter`, `GetFormatter`, `OnError`, `OnErrorFn`, `ConcurrentFormatter`, internal `acquireOutput`; `xlog_test.go`, `ownership_extra_test.go`, `sink_test.go` |
+| Logging, filtering, fatal/panic, attached fields | `packagelogger.go` | `PackageLogger`, `KV`, `ContextKV`, `WithValues`, `Log`, `Logf`, `LevelAt`, `Flush`, `FlushError`, `ExitFunc`, `CriticalFlushTimeout`; `xlog_test.go`, `ownership_extra_test.go` |
+| Record delivery worker, queue bounds, batching, lifecycle | `sink.go` | `Sink`, `NewSink`, `SinkOption`, `WithQueueBytes`, `WithMaxRecordBytes`, `WithBatchBytes`, `WithFlushInterval`, `WithOverflow`, `OverflowPolicy`, `SinkStats`, `Flush`, `FlushWithin`, `Close`, `CloseWithin`, `Err`, `Stats`; `sink_test.go` |
+| Record rendering buffers and formatter destination side | `output.go` | `Output`, `RecordBuffer`, `Bind`, `Rebind`, `Buffer`, `Emit`, `Discard`, `RecordError`, `Concurrent`; `sink_test.go`, `formatter_errors_extra_test.go` |
+| Sink application setup and performance | `example_sink_test.go`, `sink_bench_test.go`, `Documentation/benchmarks/SINK.md` | `ExampleNewSink`, tested README setup helper, `BenchmarkSinkPipeline`, `BenchmarkSinkBurst` |
+| Formatter errors and downstream flush | `formatter_errors.go` | `ErrorFormatter`, `FlushFormatter`, `FlushFormatterWithin`; `formatter_errors_extra_test.go` |
 | Context fields and deletion | `context.go` | `ContextWithKV`, `ContextEntries`; `context_test.go`, `context_entries_test.go`, `ownership_extra_test.go` |
 | Formatter interface, text, ANSI colors, no-op formatter | `formatters.go` | `Formatter`, `StringFormatter`, `PrettyFormatter`, `NilFormatter`, `NewDefaultFormatter`, `New*Formatter`, `ColorOff`, `LevelColors`; `xlog_test.go`, `helpers_test.go`, `example_test.go` |
 | Text values, JSON encoder pool, caller names | `formatters.go` | `EscapedString`, `EscapedInt64`, `EscapedUInt64`, `WithValueString`, `Caller`, `TimeNowFn`; `formatters_test.go`, `helpers_test.go` |
 | JSON records and duplicate keys | `json_formatter.go` | `JSONFormatter`, `NewJSONFormatter`, `kvToMap`; `xlog_test.go`, `helpers_test.go`, `example_test.go` |
-| Options and value/message limits | `options.go` | `Config`, `FormatterOption`, `Format*`, `DefaultMaxLogMessageLength`; `xlog_test.go`, `helpers_test.go` |
+| Options, sink selection, value/message limits | `options.go` | `Config`, `Config.Sink`, `FormatterOption`, `WithSink`, `Format*`, `DefaultMaxLogMessageLength`; `xlog_test.go`, `helpers_test.go` |
 | Environment startup, non-Windows behavior | `init.go` | `init`, `XLOG_LEVEL`, `XLOG_FORMATTER`; no isolated environment subprocess tests yet |
 | Standard-library log redirection | `log_hijack.go` | `initHijack`, `packageWriter`, `Stderr`; `log_hijack_test.go` |
 | No-op logger and its panic exception | `nillogger.go` | `NilLogger`, `NewNilLogger`; `nillogger_test.go` |
@@ -32,6 +35,7 @@ Paths below are relative to the repository root (one directory above this file).
 | Build, tools, test and coverage commands | `Makefile`, `.project/gomod-project.mk` | `make test`, `fmt`, `lint`, `generate`, `covtest`, `all` |
 | Toolchain/dependencies and CI | `go.mod`, `.golangci.yml`, `.github/workflows/unittest.yml` | Go 1.27, linter v2 config, coverage status, tagging |
 | Review findings and future work | `FINDINGS.md`, `ROADMAP.md` | Prioritized defects and staged buffered-ingress proposal |
+| Logging performance baseline, reproduction, generated results | `logging_bench_test.go`, `logging_load_test.go`, `Documentation/benchmarks/` (write-ups and scripts tracked, `results/` ignored) | `BenchmarkSyncPipeline`, `BenchmarkSyncAPI`, `BenchmarkSyncSinks`, `BenchmarkSyncLatency`, shared `perfFormatter`; opt-in `TestLoggingLoad`, `TestLoggingRetained`; whole-path timing, byte-queue comparison, profiles and raw results |
 
 ## Package xlog
 
@@ -59,19 +63,27 @@ case-sensitive; it accepts uppercase names/letters and numbers 0–5, not `-1`.
 
 ### Record execution and ownership
 
+The default synchronous path:
+
 ```text
 PackageLogger.KV / Log / Infof / ...
-  -> snapshot ERROR observer under configuration lock
-  -> ERROR observer outside locks (even if filtered)
-  -> threshold check and formatter admission under configuration lock
-  -> output lock -> field merge and formatting -> destination.Write -> unlock
-  -> release formatter admission
+  -> ERROR observer from an atomic pointer, outside locks (even if filtered)
+  -> atomic threshold check; filtered calls take no lock at all
+  -> formatter admission under configuration lock
+  -> output lock (exclusive, or shared for a ConcurrentFormatter)
+  -> field merge -> render the whole record into a pooled buffer
+  -> destination.Write, or sink admission and the worker's batched write
+  -> unlock -> release formatter admission
 ```
 
 `ContextKV` starts with an independent context-entry snapshot. Per-call merges
 copy persistent fields; plain/printf calls on derived loggers store the message
-in a structured `msg` field. Calls serialize through formatting and I/O, while
+in a structured `msg` field. Synchronous calls serialize through formatting and I/O, while
 configuration access and filtered calls do not wait on the output lock.
+Sink-backed and nil formatters share the output lock instead of holding it
+exclusively, so their producers render concurrently and never hold it across
+queue admission. `PackageLogger.level` is atomic and the ERROR observer is an
+atomic pointer, so a filtered call takes no lock.
 ERROR observers may run concurrently and may log at other levels or access
 configuration. Unguarded recursive ERROR observers recurse indefinitely.
 Custom formatters, writers, Stringers, and MarshalJSON implementations must not
@@ -100,12 +112,83 @@ ChannelWriter barriers. Legacy custom formatters without the optional API can on
 be flushed without error reporting. Callers own arbitrary destination closure;
 flushing does not imply fsync. A stalled writer can block flushing indefinitely.
 
-CRITICAL records flush supported downstream buffers/queues before returning.
+CRITICAL records flush supported downstream buffers/queues before returning,
+bounded by `CriticalFlushTimeout` (2s) through `FlushFormatterWithin`, so a
+stalled destination cannot block `ExitFunc` or a panic indefinitely.
 `Fatal`/`Fatalf` then invoke `ExitFunc(1)`; default `os.Exit` skips defers.
 `Panic`/`Panicf` log CRITICAL then panic. `Log(CRITICAL)` and `KV(CRITICAL)` do not
 terminate the process. `NilLogger` discards even fatal calls, but panic
 methods call the standard logger and panic. `NilFormatter` only discards output;
 it does not suppress `PackageLogger` fatal/panic side effects or ERROR observers.
+
+### Opt-in record sink
+
+`NewSink(capacity, opts...)` requires a positive pending-record capacity and
+starts one FIFO worker. `WithSink(s)` is an ordinary `FormatterOption`, so every
+built-in constructor accepts it, including `stackdriver.NewFormatter`. The
+application owns `Close`; an unclosed sink leaks its worker. Destinations stay
+caller-owned and are flushed when supported, never closed.
+
+Formatters embed `Output` (`output.go`), which owns the destination side:
+`Bind` selects inline delivery through an owned `bufio.Writer` or a sink target,
+`Buffer` hands out a pooled `RecordBuffer`, `Emit` takes ownership of a rendered
+record, `Discard` drops one that could not be rendered, and `RecordError`/`Err`/
+`Flush`/`FlushError`/`FlushWithin` supply the `ErrorFormatter` half. Third-party
+formatters gain sink support by embedding `Output` instead of writing to a
+destination directly; formatters that keep writing directly still work and stay
+serialized. `Config.Sink()` exposes the configured sink to formatters outside
+this package. `Options` calls `Rebind`, which is configuration, not logging.
+
+Both delivery modes render the complete record, including its trailing newline,
+into one pooled buffer and then emit it. There is exactly one encode per record:
+producer metadata, custom `Stringer` and `MarshalJSON` implementations, and
+validation panics all run on the producer, and queued records hold no reference
+to caller-owned values. Sink output is byte-identical to inline output. Buffers
+are pooled with the 64 KiB retention cap used by the text encoder pool.
+
+Admission bounds records and retained bytes. `WithQueueBytes` (8 MiB default)
+bounds queued record bytes; a record larger than the whole budget is admitted
+alone so it cannot deadlock. `WithMaxRecordBytes` rejects oversized records,
+counting them in `SinkStats.Oversize` and reporting the rejection through the
+formatter's `Err`. `WithOverflow(OverflowDropNewest)` discards instead of
+blocking and counts the drop; the default `OverflowBlock` never loses a record.
+Admission holds a short mutex over counters only, never across rendering or I/O.
+A producer waiting for queue space keeps the output lock for reading, so it does
+not block other producers.
+Peak retained memory is the byte budget, plus one batch buffer per destination,
+plus one in-flight buffer per rendering producer.
+
+The worker owns each target's `bufio.Writer` and is the only goroutine writing
+to a destination. It coalesces consecutive records for one target, writing when
+`WithBatchBytes` (64 KiB default) is reached or the queue drains, so batching
+never delays a record behind an idle queue. Changing target writes the previous
+batch first, so only the current target can hold buffered bytes. A panicking
+destination is recovered, recorded, and draining continues.
+
+`Flush`/`FlushError` are ordered barriers over everything admitted before the
+call, across all targets, followed by destination flushes. `FlushWithin` and
+`CloseWithin` bound the wait, including the barrier's own queue admission, so a
+stalled destination cannot block them. `Close` marks the sink closed, wakes
+blocked producers, closes the queue behind an admission `RWMutex`, drains,
+flushes, and publishes one cached result to every caller. Post-close submissions
+return a wrapped `io.ErrClosedPipe` that the formatter retains; a rejection is
+not a sink delivery failure and never replaces one. `Stats` reports submitted,
+written, dropped and oversize counters with queue gauges and high-water marks.
+
+A sink-backed formatter answers `Concurrent() true`, so `PackageLogger` takes
+the output lock for reading and producers render in parallel. Records are then
+ordered by admission; per-goroutine order is preserved because a producer's next
+call cannot be admitted before its previous call returns. `NilFormatter` is also
+concurrent. Formatters must not be reconfigured while logging, which is the
+existing contract that makes lock-free `Config` reads safe.
+
+Sink lifecycle, parity, ownership, bounds, policies, barriers, timeouts,
+concurrency, batching, shared sinks, and fatal/panic are tested in
+`sink_test.go`; deterministic worker tests use `testing/synctest` and channels.
+`example_sink_test.go` contains the executable example and the tested
+application helper copied into README. `sink_bench_test.go` compares
+synchronous, byte-queue and sink delivery with the final drain counted, reports
+destination writes per record, and separately samples producer latency in bursts.
 
 ### Initialization and contexts
 
@@ -141,16 +224,20 @@ an output formatter sees them.
 | Color / skip level | Color only in Pretty; skip level supported in both | Color ignored; skip level supported | Both ignored |
 | `MaxLogLength` | Per rendered KV value, then ellipsis; plain entries unlimited | Plain `msg` only; KV unlimited | Ignored; separate `MaxLogMessageLength` limits plain messages |
 
-Constructors leave `MaxLogLength` zero. Any call to `Options`, even with no
-arguments, calls `Config.Apply`, which replaces zero with 2048. Negative lengths
-disable the text/JSON limits. Truncation counts bytes, not runes or entire records;
+Constructors now seed `MaxLogLength` with `DefaultMaxLogMessageLength` (2048)
+and apply their options, so construction and `Options` agree; `Config.Apply`
+still replaces a zero value with the same default. Negative lengths disable the
+text/JSON limits. Formatters built before this change were unlimited until the
+first `Options` call. Truncation counts bytes, not runes or entire records;
 it occurs after rendering (F-09). No formatter imposes a total record byte bound.
 
 `EscapedString` is a text-log renderer, **not** a JSON serializer. It trims
 strings, selectively quotes them, emits bare time/duration values, prefixes
 certain large integers with `_`, and passes `json.RawMessage` through unchanged.
-`jsonEncode` intentionally swallows serialization errors and returns an empty
-string for unsupported values. Its `sync.Pool` stores a buffer/encoder pair per
+`Caller` resolves one program counter and memoizes the rendered function, file
+and line in a package-level `sync.Map` keyed by PC, so repeated call sites skip
+the unwind and allocate nothing. `jsonEncode` intentionally swallows
+serialization errors and returns an empty string for unsupported values. Its `sync.Pool` stores a buffer/encoder pair per
 call, returns independent strings, and retains buffers only up to 64 KiB.
 `stackdriver.String` is a separate JSON encoder without HTML escaping; it also
 swallows serialization errors. Stackdriver payloads use checked JSON encoding
@@ -237,8 +324,21 @@ formatter tests run serially. Stackdriver's original internal tests use exact
 output/source lines; black-box `sd_extra_test.go` decodes JSON types and asserts
 encoding/sink failures. Root `ownership_extra_test.go` covers fields, contexts,
 level sharing, removable formatters, callback reentry, and blocked destinations.
-There is no testdata directory or generated mock tree. Current benchmarks measure
-`EscapedString` only, not logging throughput or sink latency.
+There is no testdata directory or generated mock tree. Escaping microbenchmarks
+remain in `formatters_test.go`. `logging_bench_test.go` adds whole-pipeline
+throughput/allocation and separately sampled producer-latency benchmarks, with
+serial/parallel callers and checked delivery/flush. `logging_load_test.go` has
+opt-in burst, saturation, final-drain and gated retained-heap experiments; enable
+them with `XLOG_PERF_LOAD=1`. These root black-box experiments use public logrotate
+and Stackdriver APIs, restore the real clock temporarily, and must run serially
+with respect to global configuration. `Documentation/benchmarks/run.sh` reproduces
+the baseline and separate profiles; its README documents scope and limitations.
+Raw benchmark logs, profiles and `summary.csv` are written to
+`Documentation/benchmarks/results/`, which is gitignored generated output and can
+be deleted at any time. Only the markdown write-ups, `run.sh` and `summarize.py`
+are tracked, so every number a document cites must also be quoted in that
+document. `sink_bench_test.go` adds the sync/bytes/sink comparison behind
+`BenchmarkSinkPipeline` and `BenchmarkSinkBurst`.
 
 Use `make test`, `go test -race ./...`, `make lint`, and `govulncheck ./...`.
 `make generate` runs `go generate` and formatting; there are no generated interfaces.

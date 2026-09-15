@@ -9,6 +9,23 @@ const (
 // FormatterOption is an option for formatter behavior.
 type FormatterOption func(*Config)
 
+// WithSink delivers rendered records through s instead of writing them from the
+// logging call, moving destination latency off producers. The formatter still
+// renders the complete record, so producer metadata and caller-owned values are
+// captured before the logging call returns and no value is encoded twice.
+//
+// Apply it at construction. Applying it through Options rebinds the
+// destination, which must not race with logging; flush the formatter first so
+// records still queued in a previous sink cannot interleave with the new
+// binding at one destination. The application closes the sink after removing
+// the formatter and stopping producers.
+
+func WithSink(s *Sink) FormatterOption {
+	return func(o *Config) {
+		o.sink = s
+	}
+}
+
 // FormatWithCaller allows to configure if the caller shall be logged
 func FormatWithCaller(val bool) FormatterOption {
 	return func(o *Config) {
@@ -77,6 +94,14 @@ type Config struct {
 	WithLocation bool
 	// MaxLogLength limits selected values/messages, not total record size.
 	MaxLogLength int
+	// sink delivers rendered records asynchronously when set by WithSink.
+	sink *Sink
+}
+
+// Sink returns the sink configured by WithSink, or nil when records are written
+// inline. Formatters outside this package use it to bind their Output.
+func (c *Config) Sink() *Sink {
+	return c.sink
 }
 
 // Apply applies the options to the Config.
