@@ -3,7 +3,7 @@ package xlog
 import (
 	"bufio"
 	"io"
-	"sync"
+	"time"
 
 	"github.com/cockroachdb/errors"
 )
@@ -32,6 +32,20 @@ type ErrorFormatter interface {
 	FlushError() error
 }
 
+// FlushFormatterWithin flushes f like FlushFormatter, bounding the wait when f
+// supports it. Formatters delivering through a Sink report a timeout instead of
+// waiting for a stalled destination; inline formatters have no queue to drain,
+// so they ignore the limit. A non-positive limit waits indefinitely.
+func FlushFormatterWithin(f Formatter, limit time.Duration) error {
+	if f == nil {
+		return nil
+	}
+	if bounded, ok := f.(interface{ FlushWithin(time.Duration) error }); ok {
+		return errors.WithMessage(bounded.FlushWithin(limit), "unable to flush formatter")
+	}
+	return FlushFormatter(f)
+}
+
 // FlushFormatter flushes f and supported downstream buffers. Nil is a no-op.
 // Legacy formatters without FlushError are flushed but cannot report errors.
 // Direct callers must synchronize with formatting and destination shutdown.
@@ -44,33 +58,4 @@ func FlushFormatter(f Formatter) error {
 	}
 	f.Flush()
 	return nil
-}
-
-type formatterErrors struct {
-	mu  sync.Mutex
-	err error
-}
-
-// Err returns the first recorded formatter error and is safe during logging.
-func (e *formatterErrors) Err() error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.err
-}
-
-func (e *formatterErrors) record(err error) {
-	if err == nil {
-		return
-	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.err == nil {
-		e.err = err
-	}
-}
-
-func (e *formatterErrors) flushDestination(dest any) {
-	if flusher, ok := dest.(interface{ Flush() error }); ok {
-		e.record(errors.WithMessage(flusher.Flush(), "unable to flush log destination"))
-	}
 }

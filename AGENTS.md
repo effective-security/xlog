@@ -87,8 +87,8 @@ Do not start by grepping the tree.
 - `make lint` : final check
 - `make all` : clean, tools, generate, coverage test
 
-CI sets `MIN_TESTCOV=80` in `.github/workflows/unittest.yml`; the current status
-comparison is strictly greater than 80%. Coverage/race limitations are in FINDINGS.md.
+CI sets `MIN_TESTCOV=90` in `.github/workflows/unittest.yml`; the current status
+comparison is strictly greater than 90%. Coverage/race limitations are in FINDINGS.md.
 
 ### Documentation
 

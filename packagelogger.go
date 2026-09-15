@@ -19,16 +19,27 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sync/atomic"
+	"time"
 )
 
 // ExitFunc terminates the process after Fatal or Fatalf; it defaults to os.Exit.
 // Override and restore it only while logging is stopped, for example in tests.
 var ExitFunc = os.Exit
 
+// CriticalFlushTimeout bounds the delivery barrier CRITICAL records wait for
+// before Fatal calls ExitFunc or Panic panics, so a stalled destination cannot
+// block process exit indefinitely. Zero or negative waits forever. It bounds
+// queued delivery only: a Write already blocked in the destination cannot be
+// interrupted, and records still queued on timeout are reported by the sink.
+var CriticalFlushTimeout = 2 * time.Second
+
 // PackageLogger is logger implementation for packages
 type PackageLogger struct {
-	pkg    string
-	level  LogLevel
+	pkg string
+	// level is read on every call, including filtered ones, so it is atomic
+	// rather than guarded by the configuration lock.
+	level  atomic.Int32
 	values []any
 	parent *PackageLogger // registered logger that owns the level
 }
@@ -60,18 +71,18 @@ func (p *PackageLogger) WithValues(keysAndValues ...any) KeyValueLogger {
 
 // prepare invokes observers outside locks and admits output under the registry
 // lock, so removing a formatter can wait for all calls that selected it.
+// Filtered calls take no lock at all.
 func (p *PackageLogger) prepare(inLevel LogLevel) *formatterRegistration {
-	logger.Lock()
-	observer := logger.onError
-	logger.Unlock()
-	if inLevel == ERROR && observer != nil {
-		observer(p.pkg)
+	if inLevel == ERROR {
+		if observer := currentOnError(); observer != nil {
+			observer(p.pkg)
+		}
 	}
-	logger.Lock()
-	defer logger.Unlock()
 	if inLevel != CRITICAL && p.currentLevel() < inLevel {
 		return nil
 	}
+	logger.Lock()
+	defer logger.Unlock()
 	if logger.formatter == nil {
 		return nil
 	}
@@ -83,12 +94,12 @@ func (p *PackageLogger) prepare(inLevel LogLevel) *formatterRegistration {
 	return registration
 }
 
-// currentLevel requires the registry lock.
+// currentLevel reads the effective threshold without taking a lock.
 func (p *PackageLogger) currentLevel() LogLevel {
 	if p.parent != nil {
-		return p.parent.level
+		return LogLevel(p.parent.level.Load())
 	}
-	return p.level
+	return LogLevel(p.level.Load())
 }
 
 func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, entries ...any) {
@@ -97,8 +108,7 @@ func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, 
 		return
 	}
 	defer registration.active.Done()
-	logger.output.Lock()
-	defer logger.output.Unlock()
+	defer releaseOutput(acquireOutput(registration.formatter))
 	if len(p.values) > 0 {
 		if t == plain {
 			entries = []any{"msg", fmt.Sprint(entries...)}
@@ -112,7 +122,7 @@ func (p *PackageLogger) internalLog(t entriesType, depth int, inLevel LogLevel, 
 		registration.formatter.FormatKV(p.pkg, inLevel, depth+1, entries...)
 	}
 	if inLevel == CRITICAL {
-		_ = FlushFormatter(registration.formatter)
+		_ = FlushFormatterWithin(registration.formatter, CriticalFlushTimeout)
 	}
 }
 
@@ -122,8 +132,7 @@ func (p *PackageLogger) internalLogf(depth int, inLevel LogLevel, format string,
 		return
 	}
 	defer registration.active.Done()
-	logger.output.Lock()
-	defer logger.output.Unlock()
+	defer releaseOutput(acquireOutput(registration.formatter))
 	message := fmt.Sprintf(format, args...)
 	if len(p.values) > 0 {
 		entries := append(slices.Clone(p.values), "msg", message)
@@ -132,14 +141,12 @@ func (p *PackageLogger) internalLogf(depth int, inLevel LogLevel, format string,
 		registration.formatter.Format(p.pkg, inLevel, depth+1, message)
 	}
 	if inLevel == CRITICAL {
-		_ = FlushFormatter(registration.formatter)
+		_ = FlushFormatterWithin(registration.formatter, CriticalFlushTimeout)
 	}
 }
 
 // LevelAt reports whether the logger's threshold includes l.
 func (p *PackageLogger) LevelAt(l LogLevel) bool {
-	logger.Lock()
-	defer logger.Unlock()
 	return p.currentLevel() >= l
 }
 
@@ -296,7 +303,6 @@ func (p *PackageLogger) FlushError() error {
 	registration.active.Add(1)
 	logger.Unlock()
 	defer registration.active.Done()
-	logger.output.Lock()
-	defer logger.output.Unlock()
+	defer releaseOutput(acquireOutput(registration.formatter))
 	return FlushFormatter(registration.formatter)
 }

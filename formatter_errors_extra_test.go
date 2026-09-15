@@ -17,7 +17,7 @@ import (
 func TestFormatterDeliveryErrors(t *testing.T) {
 	constructors := []struct {
 		name string
-		new  func(io.Writer) xlog.Formatter
+		new  func(io.Writer, ...xlog.FormatterOption) xlog.Formatter
 	}{
 		{"string", xlog.NewStringFormatter},
 		{"pretty", xlog.NewPrettyFormatter},
