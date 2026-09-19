@@ -116,7 +116,7 @@ func (s *StringFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 		printEmpty:   s.PrintEmpty,
 	}
 	writeEntries(w, &params, entries...)
-	s.Emit(record)
+	s.Emit(record, l)
 }
 
 type writeEntriesParams struct {
@@ -247,7 +247,7 @@ func (c *PrettyFormatter) format(pkg string, l LogLevel, depth int, escape bool,
 
 	writeEntries(w, &params, entries...)
 
-	c.Emit(record)
+	c.Emit(record, l)
 }
 
 // ColorOff resets ANSI color to terminal default.

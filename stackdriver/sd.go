@@ -101,7 +101,7 @@ func (c *formatter) Format(pkg string, l xlog.LogLevel, depth int, entries ...an
 
 func (c *formatter) format(pkg string, l xlog.LogLevel, depth int, obj *kventries, entries ...any) {
 	ee := c.prepareEntry(pkg, l, depth+1, obj, entries...)
-	c.writeEntry(ee)
+	c.writeEntry(l, ee)
 }
 
 func (c *formatter) prepareEntry(pkg string, l xlog.LogLevel, depth int, obj *kventries, entries ...any) entry {
@@ -149,7 +149,7 @@ func (c *formatter) prepareEntry(pkg string, l xlog.LogLevel, depth int, obj *kv
 	return ee
 }
 
-func (c *formatter) writeEntry(ee entry) {
+func (c *formatter) writeEntry(l xlog.LogLevel, ee entry) {
 	// One marshal per record: the payload marshaler runs inside it, so no value
 	// is encoded twice on the way to a sink. Marshal before taking a buffer so a
 	// panicking marshaler cannot strand one.
@@ -162,7 +162,7 @@ func (c *formatter) writeEntry(ee entry) {
 	buffer := record.Buffer()
 	_, _ = buffer.Write(b)
 	_ = buffer.WriteByte('\n')
-	c.Emit(record)
+	c.Emit(record, l)
 }
 
 type entry struct {

@@ -94,3 +94,114 @@ func TestSinkStateAndDestAccessors(t *testing.T) {
 	// A bounded barrier after shutdown reports the cached shutdown result.
 	require.NoError(t, sink.FlushWithin(time.Minute))
 }
+
+// A full queue behind a stalled destination must not hold Fatal forever: the
+// CRITICAL record is dropped once CriticalFlushTimeout elapses.
+func TestSinkCriticalAdmissionIsBounded(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := newGate()
+		sink, err := xlog.NewSink(1)
+		require.NoError(t, err)
+		f := xlog.NewStringFormatter(w, xlog.FormatSkipTime(true), xlog.WithSink(sink))
+		remove := xlog.InstallFormatter(f)
+		l := xlog.NewPackageLogger("sink-tests", "critical-admission")
+		l.Info("gate")
+		<-w.started // the worker is stuck in the destination write
+		l.Info("queued")
+		exits := 0
+		oldExit := xlog.ExitFunc
+		xlog.ExitFunc = func(code int) { exits++; require.Equal(t, 1, code) }
+		start := time.Now()
+		l.Fatal("dropped")
+		elapsed := time.Since(start)
+		xlog.ExitFunc = oldExit
+
+		require.Equal(t, 1, exits, "Fatal must reach ExitFunc")
+		require.Positive(t, elapsed, "admission must have waited for the bound")
+		require.LessOrEqual(t, elapsed, 2*xlog.CriticalFlushTimeout,
+			"admission and the delivery barrier are each bounded once")
+		require.ErrorContains(t, f.(xlog.ErrorFormatter).Err(), "queue space")
+		require.Equal(t, uint64(1), sink.Stats().Dropped)
+
+		close(w.release)
+		remove()
+		require.NoError(t, sink.Close())
+		require.NotContains(t, w.String(), "dropped")
+	})
+}
+
+// A bounded barrier must observe its own limit even while an unbounded barrier
+// is already waiting on the stalled destination.
+func TestSinkBoundedBarrierIgnoresUnboundedBarrier(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := newGate()
+		sink, err := xlog.NewSink(4)
+		require.NoError(t, err)
+		f := xlog.NewStringFormatter(w, xlog.FormatSkipTime(true), xlog.WithSink(sink))
+		f.Format("", xlog.INFO, 0, "stuck")
+		<-w.started
+		unbounded := make(chan error, 1)
+		go func() { unbounded <- sink.Flush() }()
+		synctest.Wait() // the unbounded barrier now holds the serialization token
+		require.ErrorContains(t, sink.FlushWithin(time.Second), "timed out")
+		close(w.release)
+		require.NoError(t, <-unbounded)
+		require.NoError(t, sink.Close())
+	})
+}
+
+// A timed-out wait is not a delivery failure and must not poison Err.
+func TestSinkFlushTimeoutIsNotSticky(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := newGate()
+		sink, err := xlog.NewSink(4)
+		require.NoError(t, err)
+		f := xlog.NewStringFormatter(w, xlog.FormatSkipTime(true), xlog.WithSink(sink))
+		bounded, ok := f.(interface {
+			FlushWithin(time.Duration) error
+		})
+		require.True(t, ok)
+		f.Format("", xlog.INFO, 0, "slow")
+		<-w.started
+		require.ErrorContains(t, bounded.FlushWithin(time.Second), "timed out")
+		require.NoError(t, f.(xlog.ErrorFormatter).Err())
+		close(w.release)
+		require.NoError(t, sink.Close())
+		require.NoError(t, f.(xlog.ErrorFormatter).Err(), "the drain succeeded after the timeout")
+		require.Contains(t, w.String(), "slow")
+	})
+}
+
+type flushPanicWriter struct {
+	bytes.Buffer
+}
+
+func (w *flushPanicWriter) Flush() error { panic("flush panic") }
+
+// A panicking destination flush must not take the worker down with it.
+func TestSinkDestinationFlushPanic(t *testing.T) {
+	w := &flushPanicWriter{}
+	sink := newTestSink(t, 2)
+	f := xlog.NewStringFormatter(w, xlog.FormatSkipTime(true), xlog.WithSink(sink))
+	f.Format("", xlog.INFO, 0, "one")
+	require.ErrorContains(t, sink.Flush(), "destination panicked")
+	f.Format("", xlog.INFO, 0, "two")
+	require.Error(t, sink.Close())
+	require.Contains(t, w.String(), "one")
+	require.Contains(t, w.String(), "two", "the worker kept draining")
+}
+
+// Shutdown outranks the record-size policy.
+func TestSinkOversizeAfterClose(t *testing.T) {
+	var out bytes.Buffer
+	sink, err := xlog.NewSink(2, xlog.WithMaxRecordBytes(64))
+	require.NoError(t, err)
+	f := xlog.NewStringFormatter(&out,
+		xlog.FormatSkipTime(true), xlog.FormatWithCaller(false),
+		xlog.FormatMaxLogLength(-1), xlog.WithSink(sink)).(xlog.ErrorFormatter)
+	require.NoError(t, sink.Close())
+	f.Format("", xlog.INFO, 0, strings.Repeat("x", 512))
+	require.ErrorIs(t, f.Err(), io.ErrClosedPipe)
+	require.Zero(t, sink.Stats().Oversize, "stats must not change after shutdown")
+	require.Empty(t, out.String())
+}

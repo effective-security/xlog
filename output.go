@@ -101,10 +101,15 @@ func (o *Output) Bind(dest io.Writer, sink *Sink) {
 	o.target = sink.bind(dest)
 }
 
-// Rebind reapplies the bound destination when options change the sink. Records
-// already admitted to a previous sink are still delivered by that sink, which
-// can write them after the new binding starts. Flush the formatter before
-// changing its sink so the two never interleave at one destination.
+// Rebind reapplies the bound destination when options change the sink.
+//
+// Formatters and sinks are expected to be configured once at startup: Options
+// calls that do not change the sink are free, but switching an already-used
+// formatter to a different sink is supported only for tests that control their
+// own producers. Records already admitted to the previous sink are still
+// delivered by that sink and can reach the destination after the new binding
+// starts, and the previous binding keeps its batch buffer registered there, so
+// flush the formatter before switching and do not switch repeatedly.
 func (o *Output) Rebind(sink *Sink) {
 	if o.dest == nil {
 		return
@@ -125,13 +130,22 @@ func (o *Output) Dest() io.Writer { return o.dest }
 // Buffer returns a pooled buffer to render one record into.
 func (o *Output) Buffer() *RecordBuffer { return acquireRecordBuffer() }
 
-// Emit takes ownership of a rendered record and delivers it. Inline delivery
-// writes and flushes the record buffer; sink delivery hands the buffer to the
-// worker, which releases it after the write. Delivery failures are retained and
-// reported by Err, not returned: enqueueing is not delivery.
-func (o *Output) Emit(record *RecordBuffer) {
+// Emit takes ownership of a rendered record and delivers it at the record's
+// level. Inline delivery writes and flushes the record buffer; sink delivery
+// hands the buffer to the worker, which releases it after the write. Delivery
+// failures are retained and reported by Err, not returned: enqueueing is not
+// delivery.
+//
+// CRITICAL records bound their wait for queue space by CriticalFlushTimeout, so
+// a stalled destination delays Fatal and Panic by at most that long instead of
+// blocking process exit forever. Such a record is dropped and counted.
+func (o *Output) Emit(record *RecordBuffer, level LogLevel) {
 	if o.target != nil {
-		o.RecordError(o.target.sink.submit(o.target, record))
+		var limit time.Duration
+		if level == CRITICAL {
+			limit = CriticalFlushTimeout
+		}
+		o.RecordError(o.target.sink.submit(o.target, record, limit))
 		return
 	}
 	_, err := o.w.Write(record.Bytes())
@@ -184,7 +198,9 @@ func (o *Output) Flush() { _ = o.FlushError() }
 // stalled destination can block it indefinitely. See FlushWithin for a bound.
 func (o *Output) FlushError() error {
 	if o.target != nil {
-		o.RecordError(o.target.sink.Flush())
+		// Err already reports the sink's delivery failures; recording them here
+		// too would copy another formatter's failure onto this one.
+		_ = o.target.sink.Flush()
 		return o.Err()
 	}
 	o.flushBuffer()
@@ -197,7 +213,11 @@ func (o *Output) FlushError() error {
 // delivery has no queue to drain, so it behaves like FlushError.
 func (o *Output) FlushWithin(limit time.Duration) error {
 	if o.target != nil {
-		o.RecordError(o.target.sink.FlushWithin(limit))
+		// A timeout is a failed wait, not a delivery failure: report it to this
+		// caller without making it a permanent error for the formatter.
+		if err := o.target.sink.FlushWithin(limit); err != nil {
+			return err
+		}
 		return o.Err()
 	}
 	return o.FlushError()

@@ -27,11 +27,14 @@ import (
 // Override and restore it only while logging is stopped, for example in tests.
 var ExitFunc = os.Exit
 
-// CriticalFlushTimeout bounds the delivery barrier CRITICAL records wait for
-// before Fatal calls ExitFunc or Panic panics, so a stalled destination cannot
-// block process exit indefinitely. Zero or negative waits forever. It bounds
-// queued delivery only: a Write already blocked in the destination cannot be
-// interrupted, and records still queued on timeout are reported by the sink.
+// CriticalFlushTimeout bounds both halves of a CRITICAL record's wait: queue
+// admission when a sink is full, and the delivery barrier before Fatal calls
+// ExitFunc or Panic panics. A stalled destination therefore delays process exit
+// by at most twice this value instead of blocking it. Zero or negative waits
+// forever. A record dropped at admission is counted in SinkStats.Dropped and
+// reported through the formatter's Err. A Write already blocked in the
+// destination cannot be interrupted, and records still queued on timeout stay
+// queued.
 var CriticalFlushTimeout = 2 * time.Second
 
 // PackageLogger is logger implementation for packages

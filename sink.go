@@ -22,6 +22,7 @@ const (
 	errSinkWrite        = "unable to write queued log record"
 	errSinkFlush        = "unable to flush queued log destination"
 	errSinkTimeout      = "timed out waiting for log sink delivery"
+	errSinkAdmitTimeout = "timed out waiting for log sink queue space"
 	errSinkWriterPanic  = "log sink destination panicked: %v"
 )
 
@@ -45,7 +46,9 @@ type SinkStats struct {
 	Submitted uint64
 	// Written counts records handed to a destination buffer.
 	Written uint64
-	// Dropped counts records discarded by OverflowDropNewest.
+	// Dropped counts records the sink refused to queue: discarded by
+	// OverflowDropNewest, or abandoned by a bounded caller that ran out of
+	// time waiting for space, such as a CRITICAL record before process exit.
 	Dropped uint64
 	// Oversize counts records rejected for exceeding WithMaxRecordBytes.
 	Oversize uint64
@@ -101,7 +104,9 @@ func WithFlushInterval(interval time.Duration) SinkOption {
 	return func(c *sinkConfig) { c.flushInterval = interval }
 }
 
-// WithOverflow selects the full-queue policy. The default is OverflowBlock.
+// WithOverflow selects the full-queue policy. The default is OverflowBlock,
+// which still lets a CRITICAL record give up after CriticalFlushTimeout rather
+// than block process exit.
 func WithOverflow(policy OverflowPolicy) SinkOption {
 	return func(c *sinkConfig) { c.overflow = policy }
 }
@@ -144,7 +149,9 @@ type Sink struct {
 	stats  SinkStats
 
 	// barrier serializes flush barriers so one reserved queue slot is enough.
-	barrier sync.Mutex
+	// It is a semaphore rather than a mutex so a bounded caller can give up
+	// instead of queueing behind an unbounded barrier at a stalled destination.
+	barrier chan struct{}
 
 	errMu sync.Mutex
 	err   error
@@ -180,7 +187,8 @@ func NewSink(capacity int, opts ...SinkOption) (*Sink, error) {
 			cfg.maxRecordBytes, cfg.queueBytes)
 	}
 	s := &Sink{
-		cfg: cfg,
+		cfg:     cfg,
+		barrier: make(chan struct{}, 1),
 		// One slot beyond capacity keeps a barrier from waiting behind a full
 		// queue, so every admitted record sends without blocking.
 		queue: make(chan sinkItem, capacity+1),
@@ -214,36 +222,49 @@ func newTargetBuffer(dest io.Writer, size int) *bufio.Writer {
 	return bufio.NewWriterSize(io.MultiWriter(dest), size)
 }
 
-// submit takes ownership of a rendered record and queues it for delivery. It
-// returns an admission error only; delivery failures surface through Err.
-func (s *Sink) submit(target *sinkTarget, record *RecordBuffer) error {
+// submit takes ownership of a rendered record and queues it for delivery. A
+// positive limit bounds the wait for queue space, so a caller that must not
+// block forever, such as a CRITICAL record before process exit, drops the
+// record instead. It returns an admission error only; delivery failures surface
+// through Err.
+func (s *Sink) submit(target *sinkTarget, record *RecordBuffer, limit time.Duration) error {
 	size := record.Len()
-	if s.cfg.maxRecordBytes > 0 && size > s.cfg.maxRecordBytes {
-		s.mu.Lock()
-		s.stats.Oversize++
-		s.mu.Unlock()
-		record.release()
-		return errors.Newf("unable to queue log record of %d bytes, the limit is %d",
-			size, s.cfg.maxRecordBytes)
-	}
 	s.admission.RLock()
 	defer s.admission.RUnlock()
 	s.mu.Lock()
+	// Closure outranks every other admission decision, so a late submission
+	// reports shutdown rather than a size or policy result.
+	if s.closed {
+		return s.rejectLocked(record, errors.WithMessage(io.ErrClosedPipe, errSinkClosedSubmit))
+	}
+	if s.cfg.maxRecordBytes > 0 && size > s.cfg.maxRecordBytes {
+		s.stats.Oversize++
+		return s.rejectLocked(record, errors.Newf(
+			"unable to queue log record of %d bytes, the limit is %d", size, s.cfg.maxRecordBytes))
+	}
+	var deadline time.Time
+	if limit > 0 {
+		deadline = time.Now().Add(limit)
+		// Cond.Wait cannot time out, so wake every waiter and let each check
+		// its own deadline. Only bounded callers pay for the timer.
+		timer := time.AfterFunc(limit, s.room.Broadcast)
+		defer timer.Stop()
+	}
 	// hasRoom reports room once closed, so the wait ends and the check below
 	// reports the rejection.
 	for !s.hasRoom(size) {
 		if s.cfg.overflow == OverflowDropNewest {
 			s.stats.Dropped++
-			s.mu.Unlock()
-			record.release()
-			return nil
+			return s.rejectLocked(record, nil)
+		}
+		if !deadline.IsZero() && !time.Now().Before(deadline) {
+			s.stats.Dropped++
+			return s.rejectLocked(record, errors.New(errSinkAdmitTimeout))
 		}
 		s.room.Wait()
 	}
 	if s.closed {
-		s.mu.Unlock()
-		record.release()
-		return errors.WithMessage(io.ErrClosedPipe, errSinkClosedSubmit)
+		return s.rejectLocked(record, errors.WithMessage(io.ErrClosedPipe, errSinkClosedSubmit))
 	}
 	s.stats.Submitted++
 	s.stats.QueuedRecords++
@@ -253,6 +274,14 @@ func (s *Sink) submit(target *sinkTarget, record *RecordBuffer) error {
 	s.mu.Unlock()
 	s.queue <- sinkItem{target: target, record: record}
 	return nil
+}
+
+// rejectLocked releases mu, discards a record that was not queued, and returns
+// the caller's admission result.
+func (s *Sink) rejectLocked(record *RecordBuffer, err error) error {
+	s.mu.Unlock()
+	record.release()
+	return err
 }
 
 // hasRoom requires mu. A record larger than the whole byte budget is admitted
@@ -280,22 +309,30 @@ func (s *Sink) delivered(size int) {
 	s.room.Broadcast()
 }
 
-// Flush waits for every record admitted before the call to reach its
-// destination, and flushes destinations that support Flush() error. It is a
-// delivery barrier, not an fsync, and a stalled destination blocks it.
+// Flush waits for every record whose logging call returned before this call to
+// reach its destination, then flushes destinations that support Flush() error.
+// A record still being submitted concurrently may or may not be covered, like
+// any other unordered pair of operations. It is a delivery barrier, not an
+// fsync, and a stalled destination blocks it.
 func (s *Sink) Flush() error { return s.FlushWithin(0) }
 
 // FlushWithin is Flush bounded by limit, reporting a timeout instead of waiting
 // for a stalled destination. A non-positive limit waits indefinitely. A barrier
 // that times out is still completed by the worker.
 func (s *Sink) FlushWithin(limit time.Duration) error {
-	s.barrier.Lock()
-	defer s.barrier.Unlock()
 	var expired <-chan time.Time
 	if limit > 0 {
+		// Start the deadline before serialization: an unbounded barrier already
+		// waiting on a stalled destination must not extend a bounded caller.
 		timer := time.NewTimer(limit)
 		defer timer.Stop()
 		expired = timer.C
+	}
+	select {
+	case s.barrier <- struct{}{}:
+		defer func() { <-s.barrier }()
+	case <-expired:
+		return errors.New(errSinkTimeout)
 	}
 	s.admission.RLock()
 	if s.isClosed() {
@@ -496,6 +533,18 @@ func (s *Sink) flushDestinations() {
 		if !ok {
 			continue
 		}
-		s.recordError(errors.WithMessage(flusher.Flush(), errSinkFlush))
+		s.flushDestination(flusher)
 	}
+}
+
+// flushDestination flushes one destination under the same panic policy as a
+// record write: a panicking destination must not take the worker down with it,
+// because that would strand every producer waiting on delivery.
+func (s *Sink) flushDestination(flusher interface{ Flush() error }) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.recordError(errors.Newf(errSinkWriterPanic, recovered))
+		}
+	}()
+	s.recordError(errors.WithMessage(flusher.Flush(), errSinkFlush))
 }
