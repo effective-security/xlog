@@ -97,7 +97,7 @@ func (c *JSONFormatter) format(pkg string, l LogLevel, depth int, kv map[string]
 		c.RecordError(errors.WithMessage(err, "unable to encode JSON log record"))
 		return
 	}
-	c.Emit(record)
+	c.Emit(record, l)
 }
 
 func kvToMap(kvList ...any) map[string]any {

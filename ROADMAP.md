@@ -27,9 +27,11 @@ exist. What is still missing is the target service's own numbers.
 - Offer a checked submission API. Void logging calls cannot report admission
   failures, so applications that need feedback have no path other than polling
   `Err` or `Stats`.
-- Support context-bounded admission and cancellation-aware destinations. A
-  context can bound queue admission and a caller's drain wait; it cannot
-  interrupt a blocked `io.Writer.Write`. Document that limit, report remaining
+- Support context-bounded admission and cancellation-aware destinations for
+  ordinary records. CRITICAL admission is already bounded by
+  `CriticalFlushTimeout`; everything else waits indefinitely under
+  `OverflowBlock`. A context can bound queue admission and a caller's drain
+  wait; it cannot interrupt a blocked `io.Writer.Write`. Document that limit, report remaining
   queued records on timeout, and never abandon a worker goroutine while implying
   shutdown completed.
 - Account for dropped records by level and reason, not just as a total, and

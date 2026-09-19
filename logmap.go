@@ -168,6 +168,11 @@ func currentOnError() OnErrorFn {
 // formatters that answer true, so their records are ordered by admission rather
 // than by call order, preserving per-goroutine order. Formatters that embed
 // Output answer true exactly when a Sink owns their destination.
+//
+// Concurrent formatters exclude formatters that need exclusive output, not each
+// other, so during an InstallFormatter handoff two concurrent formatters can be
+// active at once. Their sinks must therefore not share one destination that is
+// unsafe for concurrent writes.
 type ConcurrentFormatter interface {
 	Formatter
 	// Concurrent reports whether concurrent Format/FormatKV calls are safe.
@@ -175,8 +180,9 @@ type ConcurrentFormatter interface {
 }
 
 // acquireOutput takes the output lock that f requires and reports whether it is
-// shared. A concurrent formatter only needs to exclude formatters installed
-// before or after it, so it takes the lock for reading.
+// shared. A concurrent formatter needs to exclude only formatters that require
+// exclusive output, so it takes the lock for reading and runs in parallel with
+// other concurrent formatters.
 func acquireOutput(f Formatter) bool {
 	if concurrent, ok := f.(ConcurrentFormatter); ok && concurrent.Concurrent() {
 		logger.output.RLock()

@@ -132,7 +132,7 @@ caller-owned and are flushed when supported, never closed.
 Formatters embed `Output` (`output.go`), which owns the destination side:
 `Bind` selects inline delivery through an owned `bufio.Writer` or a sink target,
 `Buffer` hands out a pooled `RecordBuffer`, `Emit` takes ownership of a rendered
-record, `Discard` drops one that could not be rendered, and `RecordError`/`Err`/
+record and its level, `Discard` drops one that could not be rendered, and `RecordError`/`Err`/
 `Flush`/`FlushError`/`FlushWithin` supply the `ErrorFormatter` half. Third-party
 formatters gain sink support by embedding `Output` instead of writing to a
 destination directly; formatters that keep writing directly still work and stay
@@ -154,7 +154,10 @@ formatter's `Err`. `WithOverflow(OverflowDropNewest)` discards instead of
 blocking and counts the drop; the default `OverflowBlock` never loses a record.
 Admission holds a short mutex over counters only, never across rendering or I/O.
 A producer waiting for queue space keeps the output lock for reading, so it does
-not block other producers.
+not block other producers. Shutdown outranks the size policy, so a submission
+after `Close` reports `io.ErrClosedPipe` and leaves the counters alone. A
+CRITICAL record bounds its wait for space by `CriticalFlushTimeout` and is
+dropped and counted rather than blocking `Fatal`.
 Peak retained memory is the byte budget, plus one batch buffer per destination,
 plus one in-flight buffer per rendering producer.
 
@@ -163,10 +166,15 @@ to a destination. It coalesces consecutive records for one target, writing when
 `WithBatchBytes` (64 KiB default) is reached or the queue drains, so batching
 never delays a record behind an idle queue. Changing target writes the previous
 batch first, so only the current target can hold buffered bytes. A panicking
-destination is recovered, recorded, and draining continues.
+destination is recovered, recorded, and draining continues, for record writes,
+batch writes and destination flushes alike, because a worker that dies strands
+every producer waiting on delivery.
 
-`Flush`/`FlushError` are ordered barriers over everything admitted before the
-call, across all targets, followed by destination flushes. `FlushWithin` and
+`Flush`/`FlushError` are ordered barriers over every record whose logging call
+returned before them, across all targets, followed by destination flushes. A
+concurrent in-flight submission may or may not be covered. A bounded barrier
+starts its deadline before taking the serialization token, so an unbounded
+barrier already waiting on a stalled destination cannot extend it. `FlushWithin` and
 `CloseWithin` bound the wait, including the barrier's own queue admission, so a
 stalled destination cannot block them. `Close` marks the sink closed, wakes
 blocked producers, closes the queue behind an admission `RWMutex`, drains,

@@ -1,18 +1,17 @@
 # xlog
 
-Per-package structured and printf-style logging for Go 1.27+, derived from
-[CoreOS capnslog](https://github.com/coreos/pkg/tree/master/capnslog).
+Per-package structured and printf-style logging for Go 1.27+.
 Loggers share one configurable formatter and output destination.
 
 ```sh
 go get github.com/effective-security/xlog
 ```
 
-| Package | Purpose |
-| --- | --- |
-| [`xlog`](doc.go) | Package loggers, levels, context fields, text/color/JSON formatters |
-| [`logrotate`](logrotate/doc.go) | Lumberjack rotation and optional background byte writes |
-| [`stackdriver`](stackdriver/doc.go) | Local JSON output for Google Cloud Logging |
+| Package                             | Purpose                                                             |
+| ----------------------------------- | ------------------------------------------------------------------- |
+| [`xlog`](doc.go)                    | Package loggers, levels, context fields, text/color/JSON formatters |
+| [`logrotate`](logrotate/doc.go)     | Lumberjack rotation and optional background byte writes             |
+| [`stackdriver`](stackdriver/doc.go) | Local JSON output for Google Cloud Logging                          |
 
 For contributors and agents, start with [Documentation/codemap.md](Documentation/codemap.md).
 [FINDINGS.md](FINDINGS.md) records open bugs and review risks;
@@ -48,10 +47,10 @@ By default, no formatter is installed and output is discarded. On non-Windows
 platforms, import initialization redirects the standard `log` package through
 xlog at INFO, clears its prefix/flags, and reads these variables once:
 
-| Variable | Accepted values | Effect |
-| --- | --- | --- |
-| `XLOG_FORMATTER` | `DEFAULT`, `PRETTY`, `NIL` (case-insensitive) | Pretty output to stderr, or discarded output; other/unset values install nothing |
-| `XLOG_LEVEL` | Level name, letter, or supported number (case-insensitive here) | Updates loggers registered at that moment; invalid values are ignored |
+| Variable         | Accepted values                                                 | Effect                                                                           |
+| ---------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `XLOG_FORMATTER` | `DEFAULT`, `PRETTY`, `NIL` (case-insensitive)                   | Pretty output to stderr, or discarded output; other/unset values install nothing |
+| `XLOG_LEVEL`     | Level name, letter, or supported number (case-insensitive here) | Updates loggers registered at that moment; invalid values are ignored            |
 
 New loggers start at INFO even after an earlier global-level update. Apply levels
 in `main`; `XLOG_LEVEL` is not a reliable default for subsequently registered
@@ -141,9 +140,9 @@ remove := xlog.InstallFormatter(formatter)
 logger.KV(xlog.INFO, "event", "started")
 
 // Stop application producers before shutdown.
-remove()                   // wait for calls admitted through this installation
-_ = formatter.FlushError() // ordered delivery barrier
-return sink.Close()        // drain, flush, and stop the worker
+remove()                            // wait for calls admitted through this installation
+_ = xlog.FlushFormatter(formatter)  // ordered delivery barrier
+return sink.Close()                 // drain, flush, and stop the worker
 ```
 
 This snippet belongs in a function returning `error`. The `Logger` and
@@ -176,13 +175,13 @@ rest of the behavior:
 
 `NewSink(capacity, opts...)` requires a positive record capacity. Options:
 
-| Option | Default | Purpose |
-| --- | --- | --- |
-| `WithQueueBytes(n)` | 8 MiB | Bounds retained record bytes, not just records. Non-positive disables the byte bound. |
-| `WithMaxRecordBytes(n)` | unlimited | Rejects oversized rendered records, counts them, and reports the rejection through `Err`. |
-| `WithBatchBytes(n)` | 64 KiB | Record bytes coalesced into one destination write. The worker also writes whenever the queue drains, so this bounds batching rather than delaying records. |
-| `WithFlushInterval(d)` | off | Periodically flushes destinations that support `Flush() error`. |
-| `WithOverflow(p)` | `OverflowBlock` | `OverflowBlock` never loses a record; `OverflowDropNewest` discards instead of blocking and counts the drop. |
+| Option                  | Default         | Purpose                                                                                                                                                    |
+| ----------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WithQueueBytes(n)`     | 8 MiB           | Bounds retained record bytes, not just records. Non-positive disables the byte bound.                                                                      |
+| `WithMaxRecordBytes(n)` | unlimited       | Rejects oversized rendered records, counts them, and reports the rejection through `Err`.                                                                  |
+| `WithBatchBytes(n)`     | 64 KiB          | Record bytes coalesced into one destination write. The worker also writes whenever the queue drains, so this bounds batching rather than delaying records. |
+| `WithFlushInterval(d)`  | off             | Periodically flushes destinations that support `Flush() error`.                                                                                            |
+| `WithOverflow(p)`       | `OverflowBlock` | `OverflowBlock` never loses a record; `OverflowDropNewest` discards instead of blocking and counts the drop.                                               |
 
 A record larger than the whole byte budget is queued alone, so a sink without a
 record limit cannot deadlock on one large record. Peak retained memory is
@@ -194,13 +193,17 @@ queue occupancy and high-water marks.
 
 ### Flush, failure, and shutdown
 
-- `FlushError()` on the formatter, and `Flush()` on the sink, are ordered
-  barriers for everything admitted before the call, including destination
+- `xlog.FlushFormatter(f)` and `sink.Flush()` are ordered barriers for every
+  record whose logging call returned before the barrier, including destination
   flushes. `FlushWithin(d)` and `CloseWithin(d)` bound the wait so a stalled
-  destination cannot block a barrier forever.
+  destination cannot block a barrier forever. The `Formatter` interface itself
+  only has void `Flush()`; `FlushError`/`FlushWithin` come from `xlog.Output`,
+  reachable through `xlog.ErrorFormatter` or the helper.
 - CRITICAL records wait for delivery before fatal or panic side effects, bounded
   by `xlog.CriticalFlushTimeout` (2s by default) so a stuck writer cannot block
-  `os.Exit`.
+  `os.Exit`. The same bound covers waiting for queue space, so a full queue
+  behind a stalled destination drops the record and counts it rather than
+  blocking Fatal indefinitely.
 - `Close()` rejects new records, wakes blocked producers, drains, flushes, and
   stops the worker. Concurrent and repeated closes return the same result.
   **A sink that is never closed leaks its worker.** Destinations are flushed
@@ -230,7 +233,7 @@ type myFormatter struct {
 func (f *myFormatter) FormatKV(pkg string, l xlog.LogLevel, depth int, entries ...any) {
     record := f.Buffer()
     // ... render the complete record, including its trailing newline ...
-    f.Emit(record)
+    f.Emit(record, l)
 }
 ```
 
