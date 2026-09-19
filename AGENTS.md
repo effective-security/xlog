@@ -129,5 +129,5 @@ Start here instead of grepping the tree.
 - **[`README.md`](README.md)** — high-level overview and quick-start
   samples.
 - Package `doc.go`: root, `logrotate/doc.go`, and `stackdriver/doc.go`.
-- **[`FINDINGS.md`](FINDINGS.md)** — bugs, evidence, severity, and validation limits.
-- **[`ROADMAP.md`](ROADMAP.md)** — future improvements and optional buffered ingress.
+- **[`FINDINGS.md`](FINDINGS.md)** — open bugs, evidence, severity, and validation limits.
+- **[`ROADMAP.md`](ROADMAP.md)** — open design work and planned improvements.

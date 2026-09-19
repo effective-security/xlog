@@ -34,7 +34,7 @@ Paths below are relative to the repository root (one directory above this file).
 | Cloud Logging schema, severity, custom JSON | `stackdriver/sd.go` | `NewFormatter`, `String`, `MaxLogMessageLength`, internal `kventries.MarshalJSON`; `stackdriver/sd_test.go`, `stackdriver/sd_extra_test.go` |
 | Build, tools, test and coverage commands | `Makefile`, `.project/gomod-project.mk` | `make test`, `fmt`, `lint`, `generate`, `covtest`, `all` |
 | Toolchain/dependencies and CI | `go.mod`, `.golangci.yml`, `.github/workflows/unittest.yml` | Go 1.27, linter v2 config, coverage status, tagging |
-| Review findings and future work | `FINDINGS.md`, `ROADMAP.md` | Prioritized defects and staged buffered-ingress proposal |
+| Open defects and open design work | `FINDINGS.md`, `ROADMAP.md` | Prioritized open defects; remaining sink, configuration and toolchain work. Both keep open items only, so closed work is in git history |
 | Logging performance baseline, reproduction, generated results | `logging_bench_test.go`, `logging_load_test.go`, `Documentation/benchmarks/` (write-ups and scripts tracked, `results/` ignored) | `BenchmarkSyncPipeline`, `BenchmarkSyncAPI`, `BenchmarkSyncSinks`, `BenchmarkSyncLatency`, shared `perfFormatter`; opt-in `TestLoggingLoad`, `TestLoggingRetained`; whole-path timing, byte-queue comparison, profiles and raw results |
 
 ## Package xlog

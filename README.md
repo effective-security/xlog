@@ -15,8 +15,8 @@ go get github.com/effective-security/xlog
 | [`stackdriver`](stackdriver/doc.go) | Local JSON output for Google Cloud Logging |
 
 For contributors and agents, start with [Documentation/codemap.md](Documentation/codemap.md).
-[FINDINGS.md](FINDINGS.md) records bugs and review risks;
-[ROADMAP.md](ROADMAP.md) describes improvements and optional buffered ingestion.
+[FINDINGS.md](FINDINGS.md) records open bugs and review risks;
+[ROADMAP.md](ROADMAP.md) records the work that is still open.
 
 ## Quick start
 
